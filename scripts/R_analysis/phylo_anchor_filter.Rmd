@@ -10,10 +10,10 @@ output:
     highlight: tango
     df_print: paged
 params:
-  fasta:          "../../../trees/Nematoda_18S/Nematoda_18S_cleaned.fa"
-  metadata:       "../../../trees/Nematoda_18S/Nematoda_18S_metadata.csv"
-  output:         "../../../trees/Nematoda_18S/"
-  distance:       "k2p"
+  fasta:          "../../../trees/Platyhelminthes_28S/Platyhelminthes_28S_cleaned.fa"
+  metadata:       "../../../trees/Platyhelminthes_28S/Platyhelminthes_28S_metadata.csv"
+  output:         "../../../trees/Platyhelminthes_28S/raw_matrix_260527"
+  distance:       "raw"
   threshold:      0.04
   subset:         75
   min_overlap:    0
@@ -107,13 +107,13 @@ faith_pd <- function(tree, tips) {
 message(" Step 1: Loading data ")
 
 # Load alignment
-aln     <- read.phyDat("../../../trees/Nematoda_18S/Nematoda_18S_cleaned.fa", format = "fasta", type = "DNA")
+aln     <- read.phyDat(opt$fasta, format = "fasta", type = "DNA")
 all_ids <- names(aln)
 message(sprintf("  Alignment: %d sequences, %d sites",
                 length(all_ids), ncol(as.character(aln))))
 
 # Load metadata
-meta <- read.csv("../../../trees/Nematoda_18S/Nematoda_18S_metadata.csv", stringsAsFactors = FALSE)
+meta <- read.csv(opt$metadata, stringsAsFactors = FALSE)
 required_cols <- c("label", "type")
 missing_cols  <- setdiff(required_cols, colnames(meta))
 if (length(missing_cols) > 0) {
