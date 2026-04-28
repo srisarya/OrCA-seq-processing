@@ -20,6 +20,7 @@ library(Biostrings)
 library(taxonomizr)
 library(ggplot2)
 library(ggalluvial)
+library(kableExtra)
 library(paletteer)
 library(patchwork)
 
@@ -72,6 +73,7 @@ barcode_colours <- c("maroon4",
 ```
 
 # loading in data
+
 ```{r load data}
 # these are the large-scale BLAST results for all contigs: outfmt 6, with 5 sseqids per sequence (qseqid)
 all_BLAST_barcodes <- read_tsv("../../../all_BLAST_top5.tsv", col_names = F) %>%
@@ -146,6 +148,7 @@ all_BLAST_barcodes <- read_tsv("../../../all_BLAST_top5.tsv", col_names = F) %>%
 ```
 
 # get lca from taxonomy
+
 ```{r calc lca}
 # Calculate LCA and top hit per hit
 tax_cols_present <- c("domain",
@@ -265,6 +268,7 @@ readcounts_violins
 ```
 
 # lollipops
+
 ```{r lollipop, fig.height=7, fig.width=12}
 create_lollipop_plot <- function(data,
                                  y_var,
@@ -365,29 +369,18 @@ plot_matching_ranks_lollipop <-
   ) +
   labs(x = "Matching taxonomy rank")
 
-ggsave(
-  filename = "plots/plot_matching_ranks_lollipop.pdf",
-  plot = plot_matching_ranks_lollipop,
-  width = 4.5,
-  height = 3
-)
+plot_matching_ranks_lollipop
 
-plot_phyla_clean_lollipop <- create_lollipop_plot(
-  all_BLAST_barcodes_taxonomy_lca,
-  chosen_level,
-  facet_vars = c("primer_set", "barcode")
-) +
-  labs(x = "")
-
-ggsave(
-  filename = "plots/plot_phyla_clean_lollipop.pdf",
-  plot = plot_phyla_clean_lollipop,
-  width = 7,
-  height = 4
-)
+# ggsave(
+#   filename = "plots/plot_matching_ranks_lollipop.pdf",
+#   plot = plot_matching_ranks_lollipop,
+#   width = 4.5,
+#   height = 3
+# )
 ```
 
 ## proportions of correctly LCA-BLAST-ing contigs per chosen taxon
+
 ```{r phyla proportion plot grouped functions, fig.width=5, fig.height=7}
 make_proportion_data <- function(data, taxa_filter, category_expr) {
   data %>%
@@ -473,173 +466,19 @@ plot_chosen_stacked_proportions <- all_BLAST_barcodes_taxonomy_lca %>%
 
 # supplementary figures and tables
 
-## read and contig counts across processing
-```{r data processing for plot}
-palette <- c("#2d6a4f", "#40916c", "#74c69d",  # forest greens
-             "#023e8a", "#0077b6", "#48cae4")  # ocean blues
-
-stats_list <- list.files(path = "../../../stats/", pattern = "*tsv$", full.names = TRUE)
-stats_files <- lapply(stats_list, read_tsv)
-
-parse_stats_function <- function(df) {
-  df %>%
-    # split the single column on 2+ spaces
-    separate(1, 
-             into = c("file", "format", "type", "num_seqs", "sum_len",
-                      "min_len", "avg_len", "max_len"),
-             sep = "\\s{2,}",
-             extra = "drop") %>%
-    mutate(
-      num_seqs = as.numeric(str_remove_all(num_seqs, ",")),
-      # extract dataset from the start of the file path
-      dataset  = str_extract(file, "^[^/]+")
-    )
-}
-
-parsed_stats_list <- lapply(stats_files, parse_stats_function)
-
-parsed_stats_list_renamed <- list(
-  COI_cleaned = parsed_stats_list[[1]],
-  COI_contigs = parsed_stats_list[[2]],
-  Demultiplexed     = parsed_stats_list[[3]],
-  Pychopper_cleaned   = parsed_stats_list[[4]],
-  rRNA_18S    = parsed_stats_list[[5]] %>% mutate(dataset = str_extract(file, "BW_plate[0-9]+|Lakes_day[0-9]+")),
-  rRNA_28S    = parsed_stats_list[[6]] %>% mutate(dataset = str_extract(file, "BW_plate[0-9]+|Lakes_day[0-9]+")),
-  rRNA_contigs= parsed_stats_list[[7]]
-)
-
-summarise_stage_function <- function(df, stage_name) {
-  df %>%
-    group_by(dataset) %>%
-    summarise(count = sum(num_seqs, na.rm = TRUE), .groups = "drop") %>%
-    mutate(stage = stage_name)
-}
-
-parsed_stats_summarised_list <- list(
-  s_Pychopper_cleaned = summarise_stage_function(parsed_stats_list_renamed$Pychopper_cleaned, "Pychopper cleaned"),
-  s_Demultiplexed   = summarise_stage_function(parsed_stats_list_renamed$Demultiplexed, "Demultiplexed"),
-
-  s_COI_contigs  = summarise_stage_function(parsed_stats_list_renamed$COI_contigs, "AmpliconSorted COI"),
-  s_rRNA_contigs = summarise_stage_function(parsed_stats_list_renamed$rRNA_contigs, "AmpliconSorted rRNA"),
-
-  s_18S = summarise_stage_function(parsed_stats_list_renamed$rRNA_18S, "18S"),
-  s_28S = summarise_stage_function(parsed_stats_list_renamed$rRNA_28S, "28S"),
-  s_COI_cleaned   = summarise_stage_function(parsed_stats_list_renamed$COI_cleaned, "COI")
-)
-
-stage_levels <- c("Pychopper cleaned", "Demultiplexed", "AmpliconSorted COI", 
-                  "AmpliconSorted rRNA", "18S", "28S", "COI")
+## basic stats:
+```{r}
+all_BLAST_barcodes_taxonomy_lca %>%
+     group_by(sample, primer_barcode) %>%
+     summarize(n_contigs = n(), .groups = "drop") %>%
+     group_by(primer_barcode) %>%
+     summarize(mean_contigs = mean(n_contigs),
+               median_contigs = median(n_contigs)) %>% kable()
 ```
 
-```{r alluvial plot, fig.height=5, fig.width=8}
-alluvial_df <- bind_rows(
-  parsed_stats_summarised_list$s_Pychopper_cleaned, 
-  parsed_stats_summarised_list$s_Demultiplexed, 
-  parsed_stats_summarised_list$s_rRNA, 
-  parsed_stats_summarised_list$s_COI_contigs, 
-  parsed_stats_summarised_list$s_18S, 
-  parsed_stats_summarised_list$s_28S, 
-  parsed_stats_summarised_list$s_COI_cleaned
-) %>%
-  mutate(stage = factor(stage, levels = stage_levels))
-
-# Panel 1: Pychopper_cleaned → Demultiplexed → AmpliconSorted COI / rRNA
-stage_levels_p1 <- c("Pychopper cleaned", "Demultiplexed", "AmpliconSorted COI", "AmpliconSorted rRNA")
-
-df_p1 <- bind_rows(parsed_stats_summarised_list$s_Pychopper_cleaned, 
-                   parsed_stats_summarised_list$s_Demultiplexed) %>%
-  mutate(stage = factor(stage, levels = stage_levels_p1))
-
-p1 <- ggplot(df_p1,
-       aes(x = stage, y = count,
-           alluvium = dataset, stratum = dataset,
-           fill = dataset)) +
-  geom_flow(stat = "alluvium", aes.flow = "forward", alpha = 0.6) +
-  geom_stratum(alpha = 0.9) +
-  scale_y_continuous(labels = scales::comma) +
-  scale_fill_manual(values = palette) +
-  labs(title = "Pychopper Cleaned → Demultiplexed", x = NULL, y = "Count", fill = "Dataset") +
-  theme_minimal(base_size = 8) +
-  theme(axis.text.x = element_text(angle = 45, hjust = 1),
-        legend.position = "none")
-
-# Panel 2: AmpliconSorted rRNA → 18S / 28S
-stage_levels_p2 <- c("AmpliconSorted rRNA", "rRNA product")
-
-# For each dataset, rRNA splits into 18S AND 28S
-stage_levels_p2a <- c("AmpliconSorted rRNA", "18S")
-
-df_p2a <- bind_rows(parsed_stats_summarised_list$s_rRNA_contigs, 
-                   parsed_stats_summarised_list$s_18S) %>%
-  mutate(stage = factor(stage, levels = stage_levels_p2a))
-
-p2a <- ggplot(df_p2a,
-       aes(x = stage, y = count,
-           alluvium = dataset, stratum = dataset,
-           fill = dataset)) +
-  geom_flow(stat = "alluvium", aes.flow = "forward", alpha = 0.6) +
-  geom_stratum(alpha = 0.9) +
-  scale_y_continuous(labels = scales::comma) +
-  scale_fill_manual(values = palette) +
-  labs(title = "rRNA AS → 18S Barrnap", x = NULL, y = "Count", fill = "Dataset") +
-  theme_minimal(base_size = 8) +
-  theme(axis.text.x = element_text(angle = 45, hjust = 1))
-
-stage_levels_p2b <- c("AmpliconSorted rRNA", "28S")
-
-df_p2b <- bind_rows(parsed_stats_summarised_list$s_rRNA_contigs, 
-                   parsed_stats_summarised_list$s_28S) %>%
-  mutate(stage = factor(stage, levels = stage_levels_p2b))
-
-p2b <- ggplot(df_p2b,
-       aes(x = stage, y = count,
-           alluvium = dataset, stratum = dataset,
-           fill = dataset)) +
-  geom_flow(stat = "alluvium", aes.flow = "forward", alpha = 0.6) +
-  geom_stratum(alpha = 0.9) +
-  scale_y_continuous(labels = scales::comma) +
-  scale_fill_manual(values = palette) +
-  labs(title = "rRNA AS → 28S Barrnap", x = NULL, y = "Count", fill = "Dataset") +
-  theme_minimal(base_size = 8) +
-  theme(axis.text.x = element_text(angle = 45, hjust = 1))
-
-# Panel 3: AmpliconSorted COI → COI final
-stage_levels_p3 <- c("AmpliconSorted COI", "COI")
-
-df_p3 <- bind_rows(parsed_stats_summarised_list$s_COI_contigs, 
-                   parsed_stats_summarised_list$s_COI_cleaned) %>%
-  mutate(stage = factor(stage, levels = stage_levels_p3))
-
-p3 <- ggplot(df_p3,
-       aes(x = stage, y = count,
-           alluvium = dataset, stratum = dataset,
-           fill = dataset)) +
-  geom_flow(stat = "alluvium", aes.flow = "forward", alpha = 0.6) +
-  geom_stratum(alpha = 0.9) +
-  scale_y_continuous(labels = scales::comma) +
-  scale_fill_manual(values = palette) +
-  labs(title = "COI AS → COI cleaned", x = NULL, y = "Count", fill = "Dataset") +
-  theme_minimal(base_size = 8) +
-  theme(axis.text.x = element_text(angle = 45, hjust = 1))
-
-alluvial_processing_plot<-
-  p1 / (p2a + p2b + p3) +
-  plot_annotation(
-    theme = theme(plot.title = element_text(size = 8))
-  ) +
-  plot_layout(guides = 'collect')
-
-alluvial_processing_plot
-
-# ggsave(
-#   filename = "plots/alluvial_processing_plot.pdf",
-#   plot = alluvial_processing_plot,
-#   width = 8,
-#   height = 5
-# )
-```
 
 ## average readcounts for barcodes
+
 ```{r barcode readcounts csv}
 all_BLAST_barcodes_taxonomy_lca %>% 
   distinct(qseqid, .keep_all = TRUE) %>% 
@@ -653,66 +492,32 @@ all_BLAST_barcodes_taxonomy_lca %>%
     Max       = max(readcount),
     .groups   = "drop"
   ) %>% 
-  dplyr::rename("Barcode and Primer" = "primer_barcode") %>% 
-  write.csv("plots/mean_readcounts_per_barcode.csv", row.names = FALSE)
-```
-
-## number of contigs per primer_set~barcode
-```{r contigs, fig.width = 3.5, fig.height = 3}
-primer_set_dataset_hits <-
-  all_BLAST_barcodes_taxonomy_lca %>%
-  distinct(qseqid, .keep_all = TRUE) %>%
-  group_by(dataset, primer_barcode) %>%
-  summarise(retrieved_hits = n()) %>%
-  ggplot(aes(y = retrieved_hits, x = dataset, fill = primer_barcode)) +
-  geom_bar(position = "dodge",
-           stat = "identity",
-           width = 0.7) +
-  scale_fill_manual(values = barcode_colours, name = "Primer/Barcode") +
-  labs(x = "", y = "Contig count") +
-  theme_classic(base_size = 8) +
-  theme(
-    legend.position = "none",
-    axis.text.x = element_text(size = 8),
-    legend.key.size = unit(0.3, "cm")
-  ) +
-  guides(fill = guide_legend(nrow = 2))
-
-primer_set_dataset_hits
-
-# ggsave(
-#   filename = "plots/primer_set_dataset_hits.pdf",
-#   plot = primer_set_dataset_hits,
-#   width = 3.5,
-#   height = 3
-# )
+  dplyr::rename("Barcode and Primer" = "primer_barcode") #%>% 
+  #write.csv("plots/mean_readcounts_per_barcode.csv", row.names = FALSE)
 ```
 
 ## more lollipop plots
+
 ```{r}
-plot_phyla_lollipop <-
-  create_lollipop_plot(
-    all_BLAST_barcodes_taxonomy_lca,
-    phylum,
-    facet_vars = c("primer_set", "barcode")
-  )
+plot_phyla_clean_lollipop <- create_lollipop_plot(
+  all_BLAST_barcodes_taxonomy_lca,
+  chosen_level,
+  facet_vars = c("primer_set", "barcode")
+) +
+  labs(x = "")
 
-ggsave(filename = "plots/plot_phyla_lollipop.pdf", 
-       plot = plot_phyla_lollipop, 
-       width = 10, height = 10)
+plot_phyla_clean_lollipop
 
-
-plot_lca_lollipop <- create_lollipop_plot(all_BLAST_barcodes_taxonomy_lca,
-                                          lca,
-                                          facet_vars = c("primer_set", "barcode"))
-
-# ggsave(filename = "plots/plot_lca_lollipop.pdf", 
-#        plot = plot_lca_lollipop, 
-#        width = 15, height = 55,
-#        limitsize = FALSE)
+# ggsave(
+#   filename = "plots/plot_phyla_clean_lollipop.pdf",
+#   plot = plot_phyla_clean_lollipop,
+#   width = 7,
+#   height = 4
+# )
 ```
 
 ## co-occurrence bubble plots
+
 ```{r bubbles, fig.width=25, fig.height=20}
 create_bubble_plot <- function(data,
                                x_var,
@@ -807,51 +612,8 @@ ggsave(
   height = 12,
   limitsize = FALSE
 )
-
-# 28S barcode
-plot_sample_bubbles_28S <- create_bubble_plot(
-  all_BLAST_barcodes_taxonomy_lca,
-  x_var      = name,
-  y_var      = chosen_level,
-  x_label = "Sample",
-  y_label = "Phylum",
-  title      = "Sample Composition - Metazoa Only (28S)",
-  barcode   = "28S",
-  facet_rows  = c("primer_set", "barcode"),
-  facet_cols  = c("expected_taxon")
-)
-plot_sample_bubbles_28S
-
-# 18S barcode
-plot_sample_bubbles_18S <- create_bubble_plot(
-  all_BLAST_barcodes_taxonomy_lca,
-  x_var    = name,
-  y_var    = chosen_level,
-  x_label = "Sample",
-  y_label = "Phylum",
-  title    = "Sample Composition - Metazoa Only (18S)",
-  barcode = "18S",
-  facet_rows  = c("primer_set", "barcode"),
-  facet_cols  = c("expected_taxon")
-)
-plot_sample_bubbles_18S
-
-# COI barcode
-plot_sample_bubbles_COI <- create_bubble_plot(
-  all_BLAST_barcodes_taxonomy_lca,
-  x_var    = name,
-  y_var    = chosen_level,
-  x_label = "Sample",
-  y_label = "Phylum",
-  title    = "Sample Composition - Metazoa Only (COI)",
-  barcode = "COI",
-  facet_rows  = c("primer_set", "barcode"),
-  facet_cols  = c("expected_taxon")
-)
-plot_sample_bubbles_COI
 ```
 
 ```{r versioning}
 sessionInfo()
 ```
-
