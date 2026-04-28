@@ -1,0 +1,412 @@
+---
+title: "Amplicon Sorting code"
+author: "Dylan Keene"
+AI assistance provided by Claude, Sonnet v4.6 (Anthropic, 2026). https://claude.ai
+date: "02/26-04/26"
+output:
+---
+
+Loading libraries
+
+```{r}
+
+library(tidyverse)
+library(tidytext)
+library(ggplot2)
+
+knitr::opts_chunk$set(echo = TRUE) #keeps these packages installed for all future chunks
+options(scipen = 999)
+```
+Loading data in
+
+```{r}
+plate_reader <- function(plate){
+  
+  path <- paste("csv_files/", plate, sep="") #define path
+  input_length <- list.files(path=path) #define how long the list is
+  
+  for(i in 1:length(input_length)) { #looping through all the files in the dir
+    current.var <- paste(path, input_length[i], sep="") #define the file, as whatever step the loop is on within this specific path
+    file_name <- read.csv(current.var) #read the .csv file into a var
+    assign(input_length[i], file_name, envir = .GlobalEnv) #assign the read csv file to the global environment with the correct name
+  
+    }
+}
+
+plate_reader("Lakes_1/")
+plate_reader("Lakes_2/")
+plate_reader("Lakes_3/")
+plate_reader("BW_1/")
+plate_reader("BW_2/")
+plate_reader("BW_3/")
+
+
+
+```
+Cleaning the data up:
+Checking that all columns match with one another and combining into one huge data frame.
+
+Col name checking:
+```{r}
+
+#Checking that all the columns match up with each other:
+
+#This allows us to see if there are any non-matching headers between the data frames that may cause issues
+#BW_1
+
+a <- names(BW_1_18S.csv)
+b <- names(BW_1_28S.csv)
+c <- names(BW_1_Moorea.csv)
+d <- names(BW_1_Sauron.csv)
+setdiff(a, b)
+setdiff(a, c)
+setdiff(a, d)
+setdiff(b, c)
+setdiff(b, d)
+setdiff(c, d)
+
+#BW_2
+a <- names(BW_2_18S.csv)
+b <- names(BW_2_28S.csv)
+c <- names(BW_2_Moorea.csv)
+d <- names(BW_2_Sauron.csv)
+setdiff(a, b)
+setdiff(a, c)
+setdiff(a, d)
+setdiff(b, c)
+setdiff(b, d)
+setdiff(c, d)
+#all good there
+
+#BW_3
+a <- names(BW_3_18S.csv)
+b <- names(BW_3_28S.csv)
+c <- names(BW_3_Moorea.csv)
+d <- names(BW_3_Sauron.csv)
+setdiff(a, b)
+setdiff(a, c)
+setdiff(a, d)
+setdiff(b, c)
+setdiff(b, d)
+setdiff(c, d)
+#all good there
+
+#Lakes 1
+a <- names(Lakes_1_18S.csv)
+b <- names(Lakes_1_28S.csv)
+c <- names(Lakes_1_Moorea.csv)
+d <- names(Lakes_1_Sauron.csv)
+setdiff(a, b)
+setdiff(a, c)
+setdiff(a, d)
+setdiff(b, c)
+setdiff(b, d)
+setdiff(c, d)
+
+#Lakes 2
+a <- names(Lakes_2_18S.csv)
+b <- names(Lakes_2_28S.csv)
+c <- names(Lakes_2_Moorea.csv)
+d <- names(Lakes_2_Sauron.csv)
+setdiff(a, b)
+setdiff(a, c)
+setdiff(a, d)
+setdiff(b, c)
+setdiff(b, d)
+setdiff(c, d)
+#all good
+
+#Lakes 3
+a <- names(Lakes_3_18S.csv)
+b <- names(Lakes_3_28S.csv)
+c <- names(Lakes_3_Moorea.csv)
+d <- names(Lakes_3_Sauron.csv)
+setdiff(a, b)
+setdiff(a, c)
+setdiff(a, d)
+setdiff(b, c)
+setdiff(b, d)
+setdiff(c, d)
+#all good
+```
+
+Combining all of the separate plate files into a single HUGE data frame
+
+```{r}
+csv_names <- ls(pattern = ".csv") #gets all the names of objects ending in .csv
+csv_list <- mget(csv_names) #compiles everything into a list
+
+
+#this deals with an issue between the data frames. Some hit2_group columns are integers whilst some are characters. This forces them all to be chr
+csv_data_list <- lapply(csv_list, function(df) {
+  df %>% mutate(hit2_group = as.character(hit2_group))
+})
+
+#bind all the data frames together into a big one
+bigboi <- bind_rows(csv_data_list)
+bigboi <- bigboi[-c(1713, 2098), ]#remove two erroneous rows
+
+#Correction of 2 mislabelled samples
+bigboi <- bigboi %>%
+  mutate(expected_taxon = case_when(
+    plate == "Lakes_2" & barcode == "CO1" & sample == "blast" ~ NA,
+    TRUE ~ expected_taxon
+  ))
+bigboi <- bigboi %>%
+  mutate(expected_taxon = case_when(
+    plate == "Lakes_1" & sample == "Accidental extraction blank. Pesky snails" ~ NA,
+    TRUE ~ expected_taxon
+  ))
+#standardising names
+bigboi <- bigboi %>% mutate(barcode = str_replace(barcode, "CO1", "COI"))
+bigboi <- bigboi %>% mutate(plate = str_replace(plate, "BW_1", "Gardens_1"))
+bigboi <- bigboi %>% mutate(plate = str_replace(plate, "BW_2", "Gardens_2"))
+bigboi <- bigboi %>% mutate(plate = str_replace(plate, "BW_3", "Gardens_3"))
+bigboi <- bigboi %>% mutate(hit1_expect = str_replace(hit1_expect, "y", "Y"))
+bigboi <- bigboi %>% mutate(hit2_expect = str_replace(hit2_expect, "y", "Y"))
+
+```
+
+Sorting a sample list across all taxa and plotting stacked bars.
+
+To do this, only a single plate of barcodes per analysed plate is required. rbind all together, then plot stacked bar.
+
+```{r}
+
+all_18S <- subset(bigboi, barcode == "18S") #select only the 18S plate - choice of plate is arbitrary
+all_taxa_list <- all_18S[, c("plate", "expected_taxon")] #select only the plate and expected taxon
+
+#Checking sample numbers
+counting <- all_taxa_list %>%
+  count(plate)
+
+plot_data <- all_taxa_list %>%
+  group_by(plate) %>% #group taxa by plate they belong to
+  count(expected_taxon) %>% #count all of the expected taxa
+  mutate(relative_abundance = n / sum(n) * 100) #work out the % share of each within the plate
+
+ggplot(plot_data, aes(x = plate, y = relative_abundance, fill = expected_taxon)) +
+  geom_bar(stat = "identity") +
+  xlab("Dataset") +
+  ylab("Percentage of samples") +
+  scale_fill_manual(name = "Taxa", breaks = c("Acari", "Annelida", "Ciliophora", "Cladocera", "Copepoda", "Gastrotricha", "Insecta", "Mollusca", "Nematoda", "Ostracoda", "Other Protista", "Platyhelminthes", "Rotifera", "Tardigrada", "NA"), 
+                       values=c("#E6A817", "#7B2D8B", "#FFEC8B", "#FF8C00", "#2DB34A", "#00C9A7", "#D4E84A", "#5B4FCF", "#E8334A", "#8B1A1A", "#C4956A", "#3A7A5C", "#FF6EC7", "#4A90D9", "#D6D6D6" )) +
+  theme_minimal()
+
+
+
+```
+
+Building a unified data frame with success metrics:
+
+```{r}
+
+#Building a 'success' data frame to work with further down the line
+success_metric <- bigboi[, c("file_status", "plate", "barcode", "expected_taxon", "hit1_expect", "hit2_expect", "final_expect", "hit1_primer_set", "hit2_primer_set")]
+
+#Trimming out non-meiofaunal taxa
+success_metric <- success_metric[!(success_metric$expected_taxon == "Mollusca"), ]
+success_metric <- success_metric[!(success_metric$expected_taxon == "Other Protista"), ]
+success_metric <- success_metric[!(success_metric$expected_taxon == "Insecta"), ]
+success_metric <- success_metric %>% filter(!is.na(expected_taxon))
+
+
+
+```
+
+```{r}
+#############STACKED BARPLOT INCLUDING hit1/2############
+
+plot_data_hit_inc <- success_metric %>%
+  mutate(result_type = case_when( #case_when to add a single "result_type" column
+    hit1_expect == "Y" ~ "MRC BLAST match", #Max_readcount was the blast match
+    hit2_expect == "Y" ~ "AC BLAST match", #Other contig was the origin of the blast match
+    file_status == "Y" & final_expect == "N" ~ "Off target/No Match", #none of the examined contigs matched the expected taxa
+    file_status == "N" ~ "No contig present" #no file
+    
+  )) %>%
+  filter(!is.na(result_type)) %>% #get rid of any NAs
+  mutate(result_type = factor(result_type, 
+                              levels = c("No contig present", "Off target/No Match",  "AC BLAST match", "MRC BLAST match"))) %>% #Stack the data properly for the graph
+  group_by(result_type, barcode) %>% #pick out only the result_type, barcode and plate, count the result type for each unique barcode/plate combination
+  count(result_type, barcode) %>%
+  mutate(n) #work out the % share of each within the plate
+
+# get percentage statistics for each barcode
+plot_data_hit_barcode_stats <- plot_data_hit_inc %>%
+  group_by(barcode) %>%
+  mutate(percentB = n / sum(n) * 100)
+
+# get percentage statistics for each result type
+plot_data_hit_result_stats <- plot_data_hit_inc %>%
+  group_by(result_type) %>%
+  summarise(total_n = sum(n)) %>%
+  mutate(percentR = (total_n / sum(total_n)) * 100)
+
+#Gene plot
+ggplot(plot_data_hit_inc, aes(x = barcode, y = n, fill = result_type)) +
+  geom_bar(stat = "identity", position = "fill") +
+  xlab("Gene") +
+  ylab("Proportion of potential contigs") +
+  theme_minimal() +
+  scale_fill_manual(name = "Sample Outcome", breaks = c("No contig present", "Off target/No Match",  "AC BLAST match", "MRC BLAST match"), values = c("grey40", "grey15", "darkolivegreen3", "#008F7C"))
+
+plot_data_hit_inc_taxa <- success_metric %>%
+  mutate(result_type = case_when( #case_when to add a single "result_type" column
+    hit1_expect == "Y" ~ "MRC BLAST match", #Max_readcount was the blast match
+    hit2_expect == "Y" ~ "AC BLAST match", #Other contig was the origin of the blast match
+    file_status == "Y" & final_expect == "N" ~ "Off target/No Match", #none of the examined contigs matched the expected taxa
+    file_status == "N" ~ "No contig present" #no file
+    
+  )) %>%
+  filter(!is.na(result_type)) %>% #get rid of any NAs
+  mutate(result_type = factor(result_type, 
+                              levels = c("No contig present", "Off target/No Match",  "AC BLAST match", "MRC BLAST match"))) %>% #Stack the data properly for the graph
+  group_by(result_type, expected_taxon) %>% 
+  count(result_type, expected_taxon) %>%
+  mutate(n)
+
+#taxa plot
+ggplot(plot_data_hit_inc_taxa, aes(x = expected_taxon, y = n, fill = result_type)) +
+  geom_bar(stat = "identity", position = "fill") +
+  xlab("Taxon") +
+  ylab("Proportion of potential contigs") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(hjust = 1, angle = 45)) +
+  scale_fill_manual(name = "Sample Outcome", breaks = c("No contig present", "Off target/No Match",  "AC BLAST match", "MRC BLAST match"), values = c("grey40", "grey15", "darkolivegreen3", "#008F7C"))
+
+
+```
+
+
+```{r}
+############BREAKDOWN OF TAXA###################
+plot_data_taxa <- success_metric %>%
+  mutate(primer = case_when(
+    hit1_expect == "Y" ~ hit1_primer_set,
+    hit2_expect == "Y" ~ hit2_primer_set,
+    file_status == "Y" & final_expect == "N" ~ "Off target/No Match", #none of the examined contigs matched the expected taxa
+    file_status == "N" ~ "No contig present", #no file
+    TRUE ~ NA
+  )) %>%
+  filter(!is.na(primer)) %>%
+  filter(!is.na(expected_taxon)) %>%
+  mutate(primer = factor(primer, 
+                              levels = c("No contig present", "Off target/No Match", "18S+", "28S", "Moorea", "Sauron"))) %>%
+  group_by(barcode, expected_taxon) %>% 
+  count(primer) %>%
+  mutate(relative_abundance = n)
+
+plot_data_taxa <- plot_data_taxa[!is.na(plot_data_taxa$primer), ] #removes any NA values in "primer"
+
+###STATS###
+#All taxa, specific stats as to where each Y has come from
+plot_data_taxa_barcode_stats <- plot_data_taxa %>%
+  group_by(barcode, expected_taxon) %>%
+  mutate(percentB = n / sum(n) * 100)
+
+#taxa overall Y/N stats
+taxa_success <- success_metric %>%
+  mutate(primer = case_when(
+    hit1_expect == "Y" ~ "Y",
+    hit2_expect == "Y" ~ "Y",
+    file_status == "Y" & final_expect == "N" ~ "Off target/No Match", #none of the examined contigs matched the expected taxa
+    file_status == "N" ~ "No contig present", #no file
+    TRUE ~ NA
+  )) %>%
+  filter(!is.na(primer)) %>%
+  filter(!is.na(expected_taxon)) %>%
+  group_by(expected_taxon, primer) %>%
+  count(primer) %>%
+  ungroup() %>%
+  group_by(expected_taxon) %>%
+  mutate(percentB = n / sum(n) * 100)
+
+
+test <- subset(plot_data_taxa, expected_taxon == "Acari") %>%
+  group_by(barcode, primer) %>%
+  count(primer)
+
+ggplot(plot_data_taxa, aes(x = expected_taxon, y = relative_abundance, fill = primer)) +
+  geom_bar(stat = "identity", position = "fill") +
+  xlab("Taxon") +
+  ylab("Proportion of potential contigs") +
+  theme_minimal() +
+  facet_wrap(~barcode) +
+  scale_fill_manual(name = "Contig origin", breaks = c("No contig present", "Off target/No Match", "18S+", "28S", "Moorea", "Sauron"), values = c("grey40", "grey15", "maroon4", "lightskyblue", "olivedrab1", "darkolivegreen")) +
+  coord_flip()
+
+
+```
+
+
+
+```{r}
+#mean readcount statistics for each amplicon
+
+bigboi_stats <- bigboi[!(bigboi$expected_taxon == "Mollusca"), ]
+bigboi_stats <- bigboi_stats[!(bigboi_stats$expected_taxon == "Other Protista"), ]
+bigboi_stats <- bigboi_stats[!(bigboi_stats$expected_taxon == "Insecta"), ]
+bigboi_stats <- bigboi_stats %>% filter(!is.na(expected_taxon))
+
+readcount_stats <- bigboi_stats %>%
+  mutate(successful_contig_readcount = case_when( 
+    hit1_expect == "N" ~ max_readcount, 
+    hit2_expect == "N" ~ hit2_readcount, 
+    file_status == "Y" & final_expect == "Y" ~ NA, 
+    file_status == "N" ~ NA 
+    
+  )) %>%
+  filter(!is.na(successful_contig_readcount)) #get rid of any NAs
+ 
+mean(readcount_stats$successful_contig_readcount)
+
+#18S+
+
+readcount_stats_18S <- bigboi_stats %>%
+  mutate(successful_contig_readcount = case_when( 
+    hit1_expect == "Y" & hit1_primer_set == "18S+" ~ max_readcount, 
+    hit2_expect == "Y" & hit1_primer_set == "18S+" ~ hit2_readcount, 
+    file_status == "Y" & final_expect == "Y" ~ NA, 
+    file_status == "N" ~ NA,
+    TRUE ~ NA
+  )) %>%
+  filter(!is.na(successful_contig_readcount))
+mean(readcount_stats_18S$successful_contig_readcount)
+
+#28S
+readcount_stats_28S <- bigboi_stats %>%
+  mutate(successful_contig_readcount = case_when( 
+    hit1_expect == "Y" & hit1_primer_set == "28S" ~ max_readcount, 
+    hit2_expect == "Y" & hit1_primer_set == "28S" ~ hit2_readcount, 
+    file_status == "Y" & final_expect == "Y" ~ NA, 
+    file_status == "N" ~ NA,
+    TRUE ~ NA
+  )) %>%
+  filter(!is.na(successful_contig_readcount))
+mean(readcount_stats_28S$successful_contig_readcount)
+
+#Moorea
+readcount_stats_M <- bigboi_stats %>%
+  mutate(successful_contig_readcount = case_when( 
+    hit1_expect == "Y" & hit1_primer_set == "Moorea" ~ max_readcount, 
+    hit2_expect == "Y" & hit1_primer_set == "Moorea" ~ hit2_readcount, 
+    file_status == "Y" & final_expect == "Y" ~ NA, 
+    file_status == "N" ~ NA,
+    TRUE ~ NA
+  )) %>%
+  filter(!is.na(successful_contig_readcount))
+mean(readcount_stats_M$successful_contig_readcount)
+
+#sauron
+readcount_stats_s <- bigboi_stats %>%
+  mutate(successful_contig_readcount = case_when( 
+    hit1_expect == "Y" & hit1_primer_set == "Sauron" ~ max_readcount, 
+    hit2_expect == "Y" & hit1_primer_set == "Sauron" ~ hit2_readcount, 
+    file_status == "Y" & final_expect == "Y" ~ NA, 
+    file_status == "N" ~ NA,
+    TRUE ~ NA
+  )) %>%
+  filter(!is.na(successful_contig_readcount))
+mean(readcount_stats_s$successful_contig_readcount)
+```
