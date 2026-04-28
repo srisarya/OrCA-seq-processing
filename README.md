@@ -1,5 +1,5 @@
-# Field workshop on the taxonomy and natural history of freshwater and limno-terrestrial meiofauna 🪱 🏞️
-## *This is the code used to process COI/28S/18S amplicon data from the 2025 NERC/NHM Lake District Freshwater Meiofauna workshop*
+# Processing OrCA-seq barcoding data
+## *This is the code used to process COI/28S/18S amplicon data from the 2025 NERC/NHM LField workshop on the taxonomy and natural history of freshwater and limno-terrestrial meiofauna*
 
 ## Installation and setup
 * You'll need this software, pelase make separate conda envs for each:
@@ -50,6 +50,9 @@
   5. `05a_pybarrnap_rDNA_extract.sh`: `sbatch $0 /path/to/dataset/primerless` and `05b_reorganise_COIs.sh`: `sbatch $0 /path/to/dataset/primerless`
        * 5a script uses pybarrnap version 0.5.1. It takes the assembled contigs and uses an covariance model based on Rfam(14.10) to extract sequences matching 28S and 18S rDNA profiles from our amplicon contigs.
        * 5b is a straightforward script copying over the cleaned, clustered/non-redundant primerless COIs from the primerless directory to a COI directory for clarity
+
+## Further notes
+The analysis can stop here, if you like. The scripts 06, 07 (both), 08, and 09, as well as those in the R analysis directory, can be used for command-line automated BLASTn searching and reorganising contigs for tree building or species delimitation. The scripts just listed were all used in our paper. 
   
 ## Primer schematics
 ### rRNA amplification
