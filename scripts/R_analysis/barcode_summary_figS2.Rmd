@@ -1,0 +1,232 @@
+---
+title: "simple barcoding plots"
+author: "Srishti Arya"
+date: "`r format(Sys.time(), '%d %B, %Y')`"
+output:
+  html_document:
+    toc: true
+    df_print: paged
+    code_fold: show
+---
+
+```{r setup}
+library(tidyverse)
+library(data.table)
+library(readr)
+library(Biostrings)
+library(scales)
+library(ggplot2)
+library(ggrepel)
+library(ggridges)
+library(httr)
+library(jsonlite)
+library(readr)
+library(dplyr)
+library(taxize)
+library(viridis)
+
+knitr::opts_chunk$set(echo = TRUE)
+
+options(scipen = 999)
+```
+
+
+## read and contig counts across processing
+```{r alluvial plot, fig.height=5, fig.width=4}
+palette <- c("#2d6a4f", "#40916c", "#74c69d",  # forest greens
+             "#023e8a", "#0077b6", "#48cae4")  # ocean blues
+
+stats_list <- list.files(path = "../../../stats", pattern = "*tsv$", full.names = TRUE)
+stats_files <- lapply(stats_list, read_tsv)
+
+parse_stats_function <- function(df) {
+  df %>%
+    # split the single column on 2+ spaces
+    separate(1, 
+             into = c("file", "format", "type", "num_seqs", "sum_len",
+                      "min_len", "avg_len", "max_len"),
+             sep = "\\s{2,}",
+             extra = "drop") %>%
+    mutate(
+      num_seqs = as.numeric(str_remove_all(num_seqs, ",")),
+      # extract dataset from the start of the file path
+      dataset  = str_extract(file, "^[^/]+")
+    )
+}
+
+parsed_stats_list <- lapply(stats_files, parse_stats_function)
+
+parsed_stats_list_renamed <- list(
+  COI_cleaned = parsed_stats_list[[1]],
+  COI_contigs = parsed_stats_list[[2]],
+  Demultiplexed     = parsed_stats_list[[3]],
+  Pychopper_cleaned   = parsed_stats_list[[4]],
+  rDNA_18S    = parsed_stats_list[[5]] %>% mutate(dataset = str_extract(file, "BW_plate[0-9]+|Lakes_day[0-9]+")),
+  rDNA_28S    = parsed_stats_list[[6]] %>% mutate(dataset = str_extract(file, "BW_plate[0-9]+|Lakes_day[0-9]+")),
+  rDNA_contigs= parsed_stats_list[[7]]
+)
+
+summarise_stage_function <- function(df, stage_name) {
+  df %>%
+    group_by(dataset) %>%
+    summarise(count = sum(num_seqs, na.rm = TRUE), .groups = "drop") %>%
+    mutate(stage = stage_name)
+}
+
+parsed_stats_summarised_list <- list(
+  s_Pychopper_cleaned = summarise_stage_function(parsed_stats_list_renamed$Pychopper_cleaned, "Pychopper cleaned"),
+  s_Demultiplexed   = summarise_stage_function(parsed_stats_list_renamed$Demultiplexed, "Demultiplexed"),
+
+  s_COI_contigs  = summarise_stage_function(parsed_stats_list_renamed$COI_contigs, "AmpliconSorted COI"),
+  s_rDNA_contigs = summarise_stage_function(parsed_stats_list_renamed$rDNA_contigs, "AmpliconSorted rDNA"),
+
+  s_18S = summarise_stage_function(parsed_stats_list_renamed$rDNA_18S, "18S"),
+  s_28S = summarise_stage_function(parsed_stats_list_renamed$rDNA_28S, "28S"),
+  s_COI_cleaned   = summarise_stage_function(parsed_stats_list_renamed$COI_cleaned, "COI")
+)
+
+stage_levels <- c("Pychopper cleaned", "Demultiplexed", "AmpliconSorted COI", 
+                  "AmpliconSorted rDNA", "18S", "28S", "COI")
+
+alluvial_df <- bind_rows(
+  parsed_stats_summarised_list$s_Pychopper_cleaned, 
+  parsed_stats_summarised_list$s_Demultiplexed, 
+  parsed_stats_summarised_list$s_rDNA, 
+  parsed_stats_summarised_list$s_COI_contigs, 
+  parsed_stats_summarised_list$s_18S, 
+  parsed_stats_summarised_list$s_28S, 
+  parsed_stats_summarised_list$s_COI_cleaned
+) %>%
+  mutate(stage = factor(stage, levels = stage_levels))
+
+# Panel 1: Pychopper_cleaned → Demultiplexed → AmpliconSorted COI / rDNA
+stage_levels_p1 <- c("Pychopper cleaned", "Demultiplexed", "AmpliconSorted COI", "AmpliconSorted rDNA")
+
+df_p1 <- bind_rows(parsed_stats_summarised_list$s_Pychopper_cleaned, 
+                   parsed_stats_summarised_list$s_Demultiplexed) %>%
+  mutate(stage = factor(stringr::str_wrap(stage, width = 10),
+                        levels = stringr::str_wrap(stage_levels_p1, width = 10)))
+
+p1 <- ggplot(df_p1,
+       aes(x = stage, y = count,
+           alluvium = dataset, stratum = dataset,
+           fill = dataset)) +
+  geom_flow(stat = "alluvium", aes.flow = "forward", alpha = 0.6) +
+  geom_stratum(alpha = 0.9) +
+  scale_y_continuous(labels = scales::comma) +
+  scale_fill_manual(values = palette) +
+  labs(title = "Pychopper Cleaned → Demultiplexed", x = NULL, y = "Read Count", fill = "Dataset") +
+  theme_minimal(base_size = 8) +
+  theme(axis.text.x = element_text(angle = 0, hjust = 0.5),
+        legend.position = "none")
+
+
+# For each dataset, rDNA splits into 18S AND 28S
+stage_levels_p2a <- c("AmpliconSorted rDNA", "18S")
+
+df_p2a <- bind_rows(parsed_stats_summarised_list$s_rDNA_contigs,
+                    parsed_stats_summarised_list$s_18S) %>%
+  mutate(stage = factor(stringr::str_wrap(stage, width = 10),
+                        levels = stringr::str_wrap(stage_levels_p2a, width = 10)))
+
+p2a <- ggplot(df_p2a,
+       aes(x = stage, y = count,
+           alluvium = dataset, stratum = dataset,
+           fill = dataset)) +
+  geom_flow(stat = "alluvium", aes.flow = "forward", alpha = 0.6) +
+  geom_stratum(alpha = 0.9) +
+  scale_y_continuous(labels = scales::comma) +
+  scale_fill_manual(values = palette) +
+  labs(title = "rDNA AS → 18S gene", x = NULL, y = "Contig count", fill = "Dataset") +
+  theme_minimal(base_size = 8) +
+  theme(axis.text.x = element_text(angle = 0, hjust = 0.5))
+
+stage_levels_p2b <- c("AmpliconSorted rDNA", "28S")
+
+df_p2b <- bind_rows(parsed_stats_summarised_list$s_rDNA_contigs,
+                    parsed_stats_summarised_list$s_28S) %>%
+  mutate(stage = factor(stringr::str_wrap(stage, width = 10),
+                        levels = stringr::str_wrap(stage_levels_p2b, width = 10)))
+
+p2b <- ggplot(df_p2b,
+       aes(x = stage, y = count,
+           alluvium = dataset, stratum = dataset,
+           fill = dataset)) +
+  geom_flow(stat = "alluvium", aes.flow = "forward", alpha = 0.6) +
+  geom_stratum(alpha = 0.9) +
+  scale_y_continuous(labels = scales::comma) +
+  scale_fill_manual(values = palette) +
+  labs(title = "rDNA AS → 28S gene", x = NULL, y = NULL, fill = "Dataset") +
+  theme_minimal(base_size = 8) +
+  theme(axis.text.x = element_text(angle = 0, hjust = 0.5))
+
+# Panel 3: AmpliconSorted COI → COI final
+stage_levels_p3 <- c("AmpliconSorted COI", "COI")
+
+df_p3 <- bind_rows(parsed_stats_summarised_list$s_COI_contigs,
+                   parsed_stats_summarised_list$s_COI_cleaned) %>%
+  mutate(stage = factor(stringr::str_wrap(stage, width = 10),
+                        levels = stringr::str_wrap(stage_levels_p3, width = 10)))
+
+p3 <- ggplot(df_p3,
+       aes(x = stage, y = count,
+           alluvium = dataset, stratum = dataset,
+           fill = dataset)) +
+  geom_flow(stat = "alluvium", aes.flow = "forward", alpha = 0.6) +
+  geom_stratum(alpha = 0.9) +
+  scale_y_continuous(labels = scales::comma) +
+  scale_fill_manual(values = palette) +
+  labs(title = "COI AS → COI gene", x = NULL, y = NULL, fill = "Dataset") +
+  theme_minimal(base_size = 8) +
+  theme(axis.text.x = element_text(angle = 0, hjust = 0.5))
+```
+
+```{r plots for contigs per dataset per amplicon, fig.height=5, fig.width=8}
+barcode_colours <- c("maroon4",
+                     "steelblue4",
+                     "darkolivegreen")
+
+filenames <- list.files(path = "../../../barcoding summaries/", pattern="*tsv", full.names = TRUE)
+
+data <- read_tsv(filenames, col_names = TRUE, id = "file") %>% 
+  mutate(
+    amplicon = case_when(
+      grepl("18S", file) ~ "18S",
+      grepl("28S", file) ~ "28S",
+      TRUE ~ "COI"),
+    dataset = case_when(
+      grepl("BW_plate1", file) ~ "BW_plate1",
+      grepl("BW_plate2", file) ~ "BW_plate2",
+      grepl("BW_plate3", file) ~ "BW_plate3",
+      grepl("Lakes_day1", file) ~ "Lakes_day1",
+      grepl("Lakes_day2", file) ~ "Lakes_day2",
+      TRUE ~ "Lakes_day3"),
+  )
+
+contig_counts <-
+  data %>% 
+  ggplot(aes(x = sample, y = num_hits, fill = amplicon))+
+  geom_bar(stat = "identity", position = "dodge")+
+  labs(y = "number of hits")+
+  scale_fill_manual(values = barcode_colours)+
+  theme_minimal(base_size = 8)+
+  facet_wrap(~dataset + amplicon, scales = "free_x", nrow = 3)+
+  theme(axis.text.x = element_blank(),
+        axis.ticks.x = element_blank())
+```
+
+```{r, fig.height=6, fig.width=11}
+Supp_fig_2GH<-
+  (p1 / (p2a + p2b + p3) | contig_counts) +
+  plot_layout(guides = 'collect') &
+  theme(legend.position   = 'bottom',
+        legend.direction  = 'horizontal')
+
+ggsave(
+  filename = "plots/Supp_fig_2GH.pdf",
+  plot = Supp_fig_2GH,
+  width = 11,
+  height = 6
+)
+```
+
