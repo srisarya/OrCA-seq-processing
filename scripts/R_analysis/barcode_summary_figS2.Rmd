@@ -186,7 +186,7 @@ barcode_colours <- c("maroon4",
                      "steelblue4",
                      "darkolivegreen")
 
-filenames <- list.files(path = "../../../barcoding summaries/", pattern="*tsv", full.names = TRUE)
+filenames <- list.files(path = "../../../barcoding summaries/", pattern="*tsv", full.names = TRUE) # stats from auxiliary_code/amplicon_summary.R
 
 data <- read_tsv(filenames, col_names = TRUE, id = "file") %>% 
   mutate(
