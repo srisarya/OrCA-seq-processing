@@ -1,8 +1,8 @@
 # Processing OrCA-seq barcoding data
-## *This is the code used to process COI/28S/18S amplicon data from the 2025 NERC/NHM LField workshop on the taxonomy and natural history of freshwater and limno-terrestrial meiofauna*
+## *This is the code used to process COI/28S/18S amplicon data from the 2025 NERC/NHM Field workshop on the taxonomy and natural history of freshwater and limno-terrestrial meiofauna*
 
 ## Installation and setup
-* You'll need this software, pelase make separate conda envs for each:
+* You'll need this software:
   * pychopper v2.7.0 : `conda create -n pychopper bioconda::pychopper`
   * cutadapt v4.9.0: `conda create -n cutadapt bioconda::cutadapt`
   * Amplicon Sorter (no releases, separate conda packages to install)
@@ -52,7 +52,7 @@
        * 5b is a straightforward script copying over the cleaned, clustered/non-redundant primerless COIs from the primerless directory to a COI directory for clarity
 
 ## Further notes
-The analysis can stop here, if you like. The scripts 06, 07 (both), 08, and 09, as well as those in the R analysis directory, can be used for command-line automated BLASTn searching and reorganising contigs for tree building or species delimitation. The scripts just listed were all used in our paper. 
+The analysis can stop here, if you like. The scripts 06, 07 (both), 08, and 09, as well as those in the R analysis directory, can be used for command-line automated BLASTn searching and reorganising contigs for tree building or species delimitation. The scripts listed were all used in our paper. 
   
 ## Primer schematics
 ### rRNA amplification
