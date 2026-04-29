@@ -409,3 +409,7 @@ readcount_stats_s <- bigboi_stats %>%
   filter(!is.na(successful_contig_readcount))
 mean(readcount_stats_s$successful_contig_readcount)
 ```
+
+```{r versioning}
+sessionInfo()
+```
