@@ -4,7 +4,6 @@ SLURM script to extract reads with highest readcount from FASTA files,
 separated by sequence length. Extracts longest reads (>600bp) to 'moorea'
 and shortest reads (<350bp) to 'sauron' output files.
 Written by claude.ai, Sonnet 4.5, accessed 12/01/25.
-Prompts by D. Keene, NHM.
 """
 
 #SBATCH --job-name=extract_by_size
