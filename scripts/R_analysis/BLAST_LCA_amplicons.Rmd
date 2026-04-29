@@ -223,8 +223,11 @@ all_BLAST_barcodes_taxonomy_lca <- all_BLAST_barcodes %>%
 ```{r readcounts for all contigs violins, fig.height=3, fig.width=3}
 # readcount violins
 sum_contigs <-
-  all_BLAST_barcodes_taxonomy_lca %>% group_by(primer_barcode) %>% summarize(total =
-                                                                               n())
+  all_BLAST_barcodes_taxonomy_lca %>% 
+  distinct(qseqid, .keep_all = TRUE) %>% 
+  group_by(primer_barcode) %>% 
+  summarize(total =n())
+
 readcounts_violins <- all_BLAST_barcodes_taxonomy_lca %>%
   distinct(qseqid, .keep_all = TRUE) %>%
   mutate(qseqid = fct_reorder(qseqid, readcount)) %>%
