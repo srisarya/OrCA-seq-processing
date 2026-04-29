@@ -1,6 +1,5 @@
 ---
 title: "simple barcoding plots"
-author: "Srishti Arya"
 date: "`r format(Sys.time(), '%d %B, %Y')`"
 output:
   html_document:
