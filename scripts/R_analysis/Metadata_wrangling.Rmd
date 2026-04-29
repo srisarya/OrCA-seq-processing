@@ -1,6 +1,5 @@
 ---
 title: "Amplicons metadata wrangling"
-author: "Srishti Arya"
 date: "`r format(Sys.time(), '%d %B, %Y')`"
 output:
   html_document:
