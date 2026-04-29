@@ -4,9 +4,9 @@
 
 Python > 3.8
 
-@author: Andy Vierstraete
-
 compare sequences from a MinION run and sort them based on similarity
+
+code from https://github.com/avierstr/amplicon_sorter
 
 Lightweight, super fast C/C++ library for sequence alignment using edit (Levenshtein) 
 distance:
