@@ -1,6 +1,5 @@
 ---
 title: "Amplicon Sorting code"
-author: "Dylan Keene"
 AI assistance provided by Claude, Sonnet v4.6 (Anthropic, 2026). https://claude.ai
 date: "02/26-04/26"
 output:
