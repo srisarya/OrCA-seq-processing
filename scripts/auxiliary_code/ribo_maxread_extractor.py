@@ -3,7 +3,7 @@
 SLURM script to extract reads with highest readcount from FASTA files.
 Processes subdirectories containing .fa files and extracts the read with
 the maximum readcount value from each file (original files remain unchanged).
-Written by Dylan Keene using Claude, from Anthropic. Generated 15/12/2025 using Sonnet 4.5.
+Written using Claude, from Anthropic. Generated 15/12/2025 using Sonnet 4.5.
 """
 
 #SBATCH --job-name=extract_max_readcount
