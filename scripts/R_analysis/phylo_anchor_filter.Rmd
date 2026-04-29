@@ -1,6 +1,5 @@
 ---
 title: "Phylogenetic Anchor Filtering"
-author: "Srishti Arya"
 date: "`r Sys.Date()`"
 output:
   html_document:
