@@ -292,6 +292,7 @@ create_lollipop_plot <- function(data,
     c(rlang::as_label(y_var), "barcode")
   }
   plot_data <- data %>%
+    distinct(qseqid, primer_barcode, .keep_all = TRUE) %>% 
     mutate(!!y_var := forcats::fct_explicit_na(!!y_var, "NA"))
   if (biological_rank_order) {
     biological_order <- c("domain",
@@ -373,19 +374,20 @@ plot_matching_ranks_lollipop <-
 
 plot_matching_ranks_lollipop
 
-# ggsave(
-#   filename = "plots/plot_matching_ranks_lollipop.pdf",
-#   plot = plot_matching_ranks_lollipop,
-#   width = 4.5,
-#   height = 3
-# )
+ggsave(
+  filename = "plots/plot_matching_ranks_lollipop.pdf",
+  plot = plot_matching_ranks_lollipop,
+  width = 4.5,
+  height = 3
+)
 ```
 
 ## proportions of correctly LCA-BLAST-ing contigs per chosen taxon
 
-```{r phyla proportion plot grouped functions, fig.width=5, fig.height=7}
+```{r phyla proportion plot grouped functions, fig.width=8, fig.height=5}
 make_proportion_data <- function(data, taxa_filter, category_expr) {
   data %>%
+    #distinct(qseqid, primer_barcode, .keep_all = TRUE) %>% 
     filter(expected_taxon %in% taxa_filter) %>%
     mutate(phylum_category = {{ category_expr }}) %>%
     group_by(expected_taxon, primer_set, phylum_category, barcode) %>%
@@ -458,12 +460,12 @@ plot_chosen_stacked_proportions <- all_BLAST_barcodes_taxonomy_lca %>%
   create_phylum_proportion_plot_grouped(level_order = target_taxa_for_grouped_stack)
 
 
-# ggsave(
-#   filename = "plots/plot_chosen_stacked_proportions.pdf",
-#   plot = plot_chosen_stacked_proportions,
-#   width = 8,
-#   height = 5
-# )
+ggsave(
+  filename = "plots/plot_chosen_stacked_proportions.pdf",
+  plot = plot_chosen_stacked_proportions,
+  width = 8,
+  height = 5
+)
 ```
 
 # supplementary figures and tables
@@ -510,12 +512,12 @@ plot_phyla_clean_lollipop <- create_lollipop_plot(
 
 plot_phyla_clean_lollipop
 
-# ggsave(
-#   filename = "plots/plot_phyla_clean_lollipop.pdf",
-#   plot = plot_phyla_clean_lollipop,
-#   width = 7,
-#   height = 4
-# )
+ggsave(
+  filename = "plots/plot_phyla_clean_lollipop.pdf",
+  plot = plot_phyla_clean_lollipop,
+  width = 7,
+  height = 4
+)
 ```
 
 ## co-occurrence bubble plots
