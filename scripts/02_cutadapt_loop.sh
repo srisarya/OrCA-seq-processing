@@ -49,7 +49,7 @@ echo "Output directory: $outdir"
 echo "========================================="
 
 # Verify required files exist
-for f in "$infile" "$adapters_SP5" "$adapters_SP27" "$primers_fwd" "$primers_rvs"; do
+for f in "$infile" "$adapters_SP5" "$adapters_SP27"; do
     if [ ! -f "$f" ]; then
         echo "Error: Required file not found: $f"
         exit 1
