@@ -1,64 +1,333 @@
-# Processing OrCA-seq barcoding data
-## *This is the code used to process COI/28S/18S amplicon data from the 2025 NERC/NHM Field workshop on the taxonomy and natural history of freshwater and limno-terrestrial meiofauna*
+# OrCA-seq Processing Workflow (Snakemake)
 
-## Installation and setup
-* You'll need this software:
-  * pychopper v2.7.0 : `conda create -n pychopper bioconda::pychopper`
-  * cutadapt v4.9.0: `conda create -n cutadapt bioconda::cutadapt`
-  * Amplicon Sorter (no releases, and you will need to [download the python code to the `scripts/auxiliary_code` directory](https://github.com/avierstr/amplicon_sorter/blob/master/amplicon_sorter.py))
+A Snakemake-based workflow for processing COI/28S/18S amplicon data locally!
 
-    `conda create -n amplicon_sorter && conda install bioconda::python-edlib biopython matplotlib` 
-  * seqkit v2.9.0: `conda create -n seqkit bioconda::seqkit`
-  * barrnap v0.9: `conda create -n barrnap bioconda::barrnap==0.9`
-  * pybarrnap v0.5.1: `conda create -n pybarrnap -c conda-forge -c bioconda pybarrnap -c bioconda infernal`
-  * seqtk v1.4-r122: `conda create -n seqtk bioconda::seqtk`
-  * hmmer v3.1b2: `conda create -n hmmer bioconda::hmmer`
-  * bedtools v2.31.1: `conda create -n bedtools bioconda::bedtools`
+## Version Info
 
-## How to structure
-- Run the scripts in the parent directory to the cloned github repo (so the filepaths remain relative)
-- This workflow is written for a SLURM HPC system (I used the CropDiversity cluster)
-- To run this code, git clone this whole repo, keeping the adapter directory and the scripts directory in the relative places they're in so that the codes run smoothly (or, edit the code yourself only in your cloned remote repo!
+- **Snakemake**: ≥7.0
+- **Python**: 3.8+
+- **Conda/Mamba**: Required
+- **Tested on**: MacBook Pro M3 (8 cores, 16GB RAM)
 
-## The workflow
-![bioinformatic workflow for processing DNA barcoding, from raw data to reorienting, demuxing, consensus building, cleaning, getting gene sequences, and selecting the best hits](schematics/DNA_Barcoding_workflow.png)
+## Workflow Steps
 
-  1. `01_pychopper.sh`: `sbatch $0 /path/to/dataset/raw_fastq_file`
-     * To reorient and quality-score trim cDNA reads into the same orientation
-     * This script takes in 2 extra files, which are hardcoded into the script:
-       * one which has the orientation of adapters sequences listed (`M13_config_for_pychopper.txt`)
-       * one which has the non-variable sequences for the adapters (`M13_seqs_for_pychopper.fa`)
-  
-  2. `02_cutadapt_loop.sh`: `sbatch $0 /path/to/dataset/pychopped/pychopped_sample1.fastq.gz`
-       * A loop which first demultiplexes the reads based on the 5' SP5 primers, and then, one-by-one, demultiplexes each output from the SP5 demultiplexing by the SP27 3' primers. It also trims adapters on the fly.
-       * This script takes in 2 extra files, which are hardcoded into the script: the 5' and 3' adapter sequences, `M13_amplicon_indices_forward.fa` and the reverse complement of the 3' sequences (since we reoriented before with pychopper, `M13_amplicon_indices_reverse_rc.fa`)
-       * You may notice that we do bin reads into adapter combinations which do not exist! Though this is inefficient, it's not the end of the world, since we have sequenced deeply enough per individual that enough reads are binned into the correct adapter combinations
-       * These non-existing adapter combos are removed after demuxing, along with the 'unknown' bins, since we don't want to analyse them later on. 
-  
-  3. `03_amplicon_sorter.sh`: `sbatch $0 -input /path/to/dataset/demuxed/2nd_round [-min <int> -max <int> -prefix <amplicon>]`
-     * The workflow is more dynamic here, since the user may be analysing different amplicons for us. In _our_ wet-lab protocol:
-       * For the rRNAs, we use 2 sets of primers to amplify overlapping segments of the nuclear rRNA cistron, so a sequence can be anywhere over 3Kb in length
-       * For the COIs, we use 2 alternate options for a forward primer, and one option for a reverse primer, to amplify 'redundant' sequences of a COI barcode segment (the 2 alternate options for the forward primer allow for matching more taxa than just one), so a sequence can be between 300bp-900bp in length
-     * The amplicon sorter step splits samples' reads by size and clusters them by sequence
-     * The variables (min length, max length, prefix name for amplicon type, and input folder) are user-defined :)
-  
-  4. `04a_cleaning_primers.sh`: `sbatch $0 <amplicon_sorted_dir> <amplicon_type> --r1-primers <file> --r2-primers <file> [--run-round2]`
-       * This script takes each clustered (amplicon-sorted) file and removes the primer sequences from the amplicon sequences, since these are synthetic
-       * The user can define the primer sequences to remove based on the amplicon they are sequencing, but if more than one amplicon was sequenced in a run, the other primer sets can also be submitted as a back check
-       * Sequences with lone primers, mismatched primers, or >1 primer of a kind are removed in a failsafe
-       * Optionally, the user can choose to trim 'untrimmed' sequences with alternate primers
-  
-  5. `05a_pybarrnap_rDNA_extract.sh`: `sbatch $0 /path/to/dataset/primerless` and `05b_reorganise_COIs.sh`: `sbatch $0 /path/to/dataset/primerless`
-       * 5a script uses pybarrnap version 0.5.1. It takes the assembled contigs and uses an covariance model based on Rfam(14.10) to extract sequences matching 28S and 18S rDNA profiles from our amplicon contigs.
-       * 5b is a straightforward script copying over the cleaned, clustered/non-redundant primerless COIs from the primerless directory to a COI directory for clarity
+1. **Pychopper** (01): Reorient cDNA reads and quality trim
+2. **Cutadapt (SP5/SP27)** (02): Two-round demultiplexing by adapter indices
+3. **Amplicon Sorter** (03): Cluster reads by sequence similarity and filter by size
+4. **Primer Removal** (04): Strip 5'/3' primers from amplicon sequences
+5. **Pybarrnap/Reorganize** (05): Extract rRNA genes or reorganize COIs
 
-## Further notes
-The analysis can stop here, if you like. The scripts 06, 07 (both), 08, and 09, as well as those in the R analysis directory, can be used for command-line automated BLASTn searching and reorganising contigs for tree building or species delimitation. The scripts listed were all used in our paper. 
-  
-## Primer schematics
-### rRNA amplification
-![schematic for amplification of 18S/5.8S/partial 28S rRNA cistron, showing wiggly purple line representing DNA, yellow boxes where genes are (overlaid on the purple DNA), and red arrows labelled with primer sequence name at the positions where the primers sit to amplify genes, not to scale](schematics/18Setc.png)
-![schematic for amplification of full 28S rRNA gene, showing wiggly purple line representing DNA, yellow boxes where genes are (overlaid on the purple DNA), and red arrows labelled with primer sequence name at the positions where the primers sit to amplify genes, not to scale](schematics/28S_full.png)
+## Setup
 
-### COI amplification
-![schematic for amplification of partial COI gene, showing wiggly purple line representing DNA, yellow boxes where COI gene is (overlaid on the purple DNA), and red arrows labelled with primer sequence name at the positions where the primers sit to amplify COI, not to scale](schematics/COI.png)
+### Prerequisites
+
+- **macOS** with M3 or M-series chip
+- **Conda/Mamba** installed (recommended: [Mambaforge](https://github.com/conda-forge/miniforge))
+- **Snakemake** ≥7.0
+- **Git** (to clone the OrCA-seq-processing repo)
+
+### Installation
+
+1. **Clone the repository:**
+   ```bash
+   git clone https://github.com/srisarya/OrCA-seq-processing.git
+   cd OrCA-seq-processing
+   ```
+
+2. **Create a Snakemake environment:**
+   ```bash
+   conda create -n snakemake-orca snakemake=7.32.4 -c bioconda -c conda-forge
+   conda activate snakemake-orca
+   ```
+
+3. **Copy workflow files into the repo root:**
+   - Copy `Snakefile` to repo root
+   - Copy `config.yaml` to repo root
+   - Copy `configs/` directory to repo root
+   - Create `envs/` directory and copy all `envs/*.yaml` files
+
+   Your directory structure should look like:
+   ```
+   OrCA-seq-processing/
+   ├── Snakefile
+   ├── config.yaml
+   ├── configs/
+   │   ├── dataset_coi.yaml
+   │   └── dataset_rrna.yaml
+   ├── envs/
+   │   ├── pychopper.yaml
+   │   ├── cutadapt.yaml
+   │   ├── amplicon_sorter.yaml
+   │   └── pybarrnap.yaml
+   ├── adapters_primers/
+   ├── scripts/
+   │   ├── auxiliary_code/
+   │   │   └── amplicon_sorter.py  (download if not present)
+   │   └── ...
+   └── input_reads/        # Your FASTQ files here
+   ```
+
+4. **Download amplicon_sorter.py (if not present):**
+   ```bash
+   curl -o scripts/auxiliary_code/amplicon_sorter.py \
+     https://raw.githubusercontent.com/avierstr/amplicon_sorter/master/amplicon_sorter.py
+   chmod +x scripts/auxiliary_code/amplicon_sorter.py
+   ```
+
+## Usage
+
+### Basic Workflow Execution
+
+1. **Prepare input files:**
+   - Place FASTQ files (`.fastq.gz`, `.fastq`, `.fq.gz`, or `.fq`) in the `input_reads/` directory
+
+2. **Run the workflow with default config:**
+   ```bash
+   snakemake -s OrCAseq_processing.smk -c 4 --use-conda --rerun-incomplete
+   ```
+   
+   Options:
+   - `-c 4`: Use 4 cores (adjust for your system; M3 can handle 4-8)
+   - `--use-conda`: Automatically create/activate conda environments
+   - `--rerun-incomplete`: Re-run jobs if they fail partway through
+
+3. **Run with a specific dataset config:**
+   ```bash
+   snakemake -s OrCAseq_processing.smk -c 4 --use-conda --configfile configs/dataset_coi.yaml
+   ```
+
+4. **Dry-run (preview what will execute):**
+   ```bash
+   snakemake -s OrCAseq_processing.smk -n --configfile configs/config_Lakesday1.yaml # or other dataset)
+   ```
+
+5. **Generate a workflow visualization:**
+   ```bash
+   snakemake -s OrCAseq_processing.smk --dag | dot -Tpng > workflow.png
+   ```
+
+### Configuration Files
+
+#### Main config.yaml
+
+Default settings for the workflow. Modify this for baseline parameters:
+
+```yaml
+dataset_name: "my_dataset"          # Dataset identifier
+raw_reads: "input_reads"             # FASTQ input directory
+work_dir: "results"                  # Output base directory
+
+# Thread allocation (MacBook M3 has 8 cores; use 4 per task)
+pychopper_threads: 4
+cutadapt_threads: 4
+amplicon_sorter_threads: 4
+
+# Quality and size filters
+pychopper_q_score: 10
+min_amplicon_size: null              # Leave null for no filtering
+max_amplicon_size: null
+
+# Amplicon types to process
+amplicon_types:
+  - "rRNAs"
+  - "COIs"
+```
+
+#### Dataset-Specific Configs
+
+**Create custom config for your dataset:**
+
+In this study the dataset configs are in configs/ 
+The below is a template
+
+```yaml
+# configs/config_mydataset.yaml
+dataset_name: "my_dataset"
+raw_reads: "input_reads/my_dataset"
+
+# Your specific primers/adapters (relative to repo root)
+r1_primers: "adapters_primers/my_primers.fa"
+r2_primers: null
+
+# Your size filters
+min_amplicon_size: 400
+max_amplicon_size: 1200
+
+amplicon_types:
+  - "amplicon"
+```
+
+Then run:
+```bash
+snakemake -c 4 --use-conda --configfile configs/config_mydataset.yaml
+```
+
+## Output Structure
+
+```
+results/
+├── pychopped/
+│   ├── {sample}_pass.fastq.gz
+│   ├── {sample}_rescued.fastq
+│   ├── {sample}_unclass.fastq
+│   ├── {sample}_short.fastq
+│   └── {sample}_stats.out
+├── demuxed/
+│   ├── SP5/{sample}/{SP5_id}_{DATASET_NAME}.fastq.gz
+│   └── SP27/{sample}/{combo}_{DATASET_NAME}.fastq.gz      # combo = SP27_xxx_SP5_yyy
+├── amplicon_sorted/
+│   └── {sample}/{combo}/
+│       ├── rRNAs/{combo}_consensus_rRNAs.fasta
+│       └── COIs/{combo}_consensus_COIs.fasta
+├── primerless/
+│   └── {sample}/{combo}/
+│       ├── rRNAs/cleaned_amplicon_{combo}.fasta
+│       └── COIs/cleaned_amplicon_{combo}.fasta
+├── rRNA_genes/
+│   └── {sample}/
+│       ├── {combo}_18S.fa
+│       └── {combo}_28S.fa
+├── COI_gene/
+│   └── {sample}/
+│       └── {combo}_COI.fasta
+└── logs/
+    ├── pychopper_{sample}.log
+    ├── cutadapt_sp5_{sample}.log
+    ├── cutadapt_sp27_{sample}.log
+    ├── amplicon_sorter_{sample}_{combo}.log
+    ├── primer_removal_{sample}_{combo}_{amplicon_type}.log
+    └── pybarrnap_{sample}_{combo}.log
+```
+
+## Performance on MacBook Pro M3
+
+Estimated runtime for ~1M reads per sample:
+
+| Step | Time | Notes |
+|------|------|-------|
+| Pychopper | 45-60 min | I/O bound, ~4 threads |
+| Cutadapt SP5 | 5-10 min | Fast demultiplexing |
+| Cutadapt SP27 | 10-15 min | Per-adapter loop |
+| Amplicon Sorter | 20-30 min | CPU intensive, use 6 threads |
+| Primer Removal | 2-5 min | Fast with cutadapt |
+| Pybarrnap | 10-15 min | covariance model search for rRNAs |
+| COI reorganisation | 1-5 min | just moving files |
+| **Total** | **~1.5 hours** | Per sample |
+
+## Memory Considerations
+
+The MacBook Pro M3 with 16GB RAM is sufficient for:
+- Single samples use ~2-4GB peak memory
+- Recommend running with `-c 4` per job to avoid OOM
+
+If memory is an issue:
+- Reduce thread counts (`-c 2`)
+
+If it's too slow:
+- Increase thread counts (`-c 6`) or if your laptop is more powerful, up threads more
+
+## Troubleshooting
+
+### "Command not found: pychopper"
+
+Pychopper sometimes can have versioning issues. The combination of pychopper v2.7.10 with dependency on python v3.10.17 works. 
+
+The conda environment wasn't activated. Snakemake should handle this with `--use-conda`.
+```bash
+conda activate snakemake-orca
+snakemake -c 4 --use-conda
+```
+
+### "File not found in demuxed/"
+
+This means cutadapt demultiplexing produced no output, likely due to:
+- Wrong adapter sequences in `config.yaml`. Make sure to check sequence orientation!
+- Incorrect `M13_config_for_pychopper.txt` orientation (meaning the downstream adapter seqs will be off too)
+- Quality issues in pychopped output (check nanoplot, which you may run manually)
+
+Check logs:
+```bash
+cat results/logs/cutadapt_sp5_sample1.log
+```
+
+### "No fastq.gz files found in input_reads/"
+
+Ensure:
+1. Folder exists: `mkdir -p input_reads`
+2. Files are there: `ls input_reads/*.fastq.gz`
+3. Filenames have the correct extension (`.fastq.gz` for this analysis; later I might allow for other variations)
+
+### Amplicon Sorter complains about consensus file
+
+Likely causes:
+- Wrong cluster thresholds
+- Too few reads in a demux bin
+- Check: `results/amplicon_sorted/*/*/results.txt`
+
+### "FASTA index found" error from pybarrnap
+
+Remove stale `.fai` files:
+```bash
+find results/ -name "*.fai" -delete
+snakemake -c 4 --use-conda --rerun-incomplete
+```
+
+## Advanced Usage
+
+### Run only specific rules
+
+```bash
+# Only pychopper
+snakemake pychopper -c 4 --use-conda
+
+# Only primer removal
+snakemake primer_removal -c 4 --use-conda
+
+# Only final COI output
+snakemake reorganize_cois -c 4 --use-conda
+```
+
+### Force re-run of failed steps
+
+```bash
+snakemake -c 4 --use-conda --rerun-incomplete --rerun-all
+```
+
+### Generate reports
+
+```bash
+snakemake --report report.html --use-conda
+```
+
+### Use all available cores (caution: may use >8GB RAM)
+
+```bash
+snakemake -c 8 --use-conda  # M3 has 8 cores total
+```
+
+### Run without conda (if tools already installed)
+
+```bash
+snakemake -c 4 --rerun-incomplete
+```
+(Assumes `pychopper`, `cutadapt`, etc. are in your PATH)
+
+## Notes
+
+- **Adapter sequences** must match your exact wet-lab protocol. Check `adapters_primers/` files.
+- **Primer sequences** in config should be 5'→3' orientation. Use `seqkit seq -r` to reverse-complement if needed.
+- **Size filters** (min/max amplicon size) are optional but recommended for specificity.
+- **Multiple dataset runs** can be done in separate directories using different configs.
+- The workflow is **idempotent**: re-running with `--rerun-incomplete` will skip completed steps.
+
+## Contact & Citation
+
+This Snakemake workflow wraps the bash scripts from the main branch of:
+https://github.com/srisarya/OrCA-seq-processing
+Please cite the original repository if publishing results.
+
+Snakemake was made by Johannes Köster et al., ;
+Mölder, F., Jablonski, K.P., Letcher, B., Hall, M.B., Tomkins-Tinch, C.H., Sochat, V., Forster, J., Lee, S., Twardziok, S.O., Kanitz, A., Wilm, A., Holtgrewe, M., Rahmann, S., Nahnsen, S., Köster, J., 2021. Sustainable data analysis with Snakemake. F1000Res 10, 33.
+
+## License
+Same as the OrCA-seq-processing repository main branch :)
