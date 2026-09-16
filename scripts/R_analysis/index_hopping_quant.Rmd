@@ -1,0 +1,106 @@
+---
+title: "Adapter usage: thresholding"
+author: "Srishti Arya"
+date: "`r format(Sys.time(), '%d %B, %Y')`"
+output:
+  html_document:
+    toc: true
+    df_print: paged
+    code_fold: show
+---
+
+# Intro
+
+-   This is a review of the demultiplexing process
+-   Prior investigation suggested that perhaps the issue lies in a lax error rate threshold in demuxing, and possibly a problem with rescued reads from pychopper containing primers in the middle of reads
+-   Here, I tested 4 options
+    -   default (error rate 0.2 and pychopped rescued reads included)
+    -   lower error rate (to error rate 0.1)
+    -   no rescued reads
+    -   no rescued reads AND a lower demux error rate
+
+# Setup
+
+```{r setup, message=FALSE}
+knitr::opts_chunk$set() # keep packages in knits
+library(tidyverse)
+library(readr)
+library(ggplot2)
+library(vioplot)
+library(ggrepel)
+library(patchwork)
+
+options(scipen = 999) # doesn't use standard form 
+```
+
+# Adapter searches: are the adapters present in the right places?
+
+## data wrangling: full adapter search
+
+```{r load full adapter search data}
+full<- 
+  read_csv("../../../sense_check_adapter_primer/adapter_testing_thresholds/collated_full_presence.csv", col_names = FALSE) %>% # read in the csv
+  as.data.frame() %>%  # make it into a data frame
+  dplyr::rename("adapter" = X1, "file" = X2, "fwd" = X3, "rc" = X4, "hits" = X5) %>% 
+  dplyr::mutate( # adding a column
+    threshold = str_extract(file, "(?<=SP5_[0-9]{3}_)(.*?)(?=_day1)"), # which threshold?
+    adapter_in_file = mapply(grepl, adapter, file), # is the adapter in this file?
+    match = case_when( # a clean alternative to a nested ifelse
+      hits > 0 & !adapter_in_file ~ "misassignment", # are there non-null hits of the adapter in the WRONG file?
+      hits > 0 & adapter_in_file ~ "ok", # are there non-null hits of the adapter in the RIGHT file?
+      TRUE ~ "ok")) # and if no hits then also ok since this can be the adapters matching the wrong file so it's ok if there are 0
+
+full_summary<-
+  full %>% 
+  mutate(hits = ifelse(is.na(hits) | is.nan(hits), 0, hits)) %>%  # Coerce NA/NaN to 0
+  group_by(threshold, adapter, match) %>%
+  summarise(total_hits = sum(hits, na.rm = TRUE), .groups = "drop") %>% # counting hits per adapter)
+  complete(threshold, adapter, match, fill = list(total_hits = 0)) %>% 
+  group_by(threshold, adapter) %>%
+  mutate(percent = 100 * total_hits / sum(total_hits, na.rm = TRUE)) %>% # make a % count
+  ungroup() %>%
+  dplyr::filter(threshold == "lowererate_norescue") # some testing was done locally when deciding on cleaning/demuxing params
+
+```
+
+## plotting the full adapter sequences' correct hits and misassigned hits
+
+```{r plot full adapter search data, fig.height=5, fig.width=10}
+full %>% 
+  ggplot(aes(x = adapter, y = hits, fill = match))+
+  geom_bar(stat = "identity")+
+  geom_text(data = full_summary %>% dplyr::filter(match == "misassignment" | percent == 0),
+            aes(x = adapter, y = 100, label = paste0(signif(percent, 1) %>% replace(is.na(.), 0), "%")),
+            vjust = -1, hjust = 0.1, size = 3, angle = 45) +
+  theme_minimal()+
+  theme(axis.text.x = element_text(hjust=1, vjust=1, angle=45),
+        legend.position = "bottom")
+```
+
+```{r plot full adapter search summary, fig.height=7, fig.width=5}
+# with percentage
+full_summary %>% 
+  ggplot(aes(x = adapter, y = percent, fill = match)) +
+  geom_bar(stat = "identity") +
+  coord_flip()+
+  geom_text(data = full_summary %>% dplyr::filter(match == "misassignment" | percent==0),
+            aes(x = adapter, y = 100, label = paste0(signif(percent, 1)%>% replace(is.na(.), 0), "%")),
+            vjust = 0, hjust = -0.1, size = 3) +
+  expand_limits(y=c(0, 115))+
+  labs(x = "Adapter",
+       y = "Percentage of total hits",
+       fill = "Assignment") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+
+```{r, fig.height=5, fig.width=5}
+full_summary %>%
+  dplyr::filter(match == "misassignment") %>% 
+  ggplot(aes(x = match, y = adapter, fill = percent)) +
+  geom_tile() +
+  geom_text(aes(label = paste0(signif(percent, 1), "%")), size = 3) +
+  scale_fill_gradient(low = "white", high = "#bd465e", na.value = "#d3d3d3") +
+  labs(x = "Match type", y = "Adapter", fill = "% Misassigned")
+```
+
