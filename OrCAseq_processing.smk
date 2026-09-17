@@ -1,6 +1,6 @@
 """
 OrCA-seq amplicon processing workflow for local MacBook Pro M3 execution
-Covers: pychopper -> cutadapt (SP5 x SP27 demux) -> amplicon_sorter -> primer_removal -> pybarrnap/COI reorganization
+Covers: pychopper -> cutadapt (SP5 x SP27 demux) -> amplicon_sorter -> primer_removal -> barrnap/COI reorganization
 """
 # ----------------------------------------
 # Setup
@@ -219,7 +219,7 @@ def get_final_targets(wildcards):
             ↓
         primer_removal
             ↓
-        pybarrnap_extract (rRNAs) / reorganize_cois (COIs)
+        barrnap_extract (rRNAs) / reorganize_cois (COIs)
             ↓
         final targets
     """
@@ -240,6 +240,16 @@ def get_final_targets(wildcards):
                         "rRNA_genes",
                         sample,
                         f"{combo}_18S.fa"
+                    )
+                )
+        for combo in combos:
+            if "rRNAs" in AMPLICON_TYPES:
+                targets.append(
+                    os.path.join(
+                        WORK_DIR,
+                        "rRNA_genes",
+                        sample,
+                        f"{combo}_28S.fa"
                     )
                 )
             if "COIs" in AMPLICON_TYPES:
@@ -474,22 +484,12 @@ rule amplicon_sorter:
     shell:
         r"""
         set -euo pipefail
-        
-        # AmpliconSorter output directory -- one per (sample, combo, amplicon_type)
-        # so that COI and rRNA runs for the same combo never share intermediates.
-        # Example:
-        # results/amplicon_sorted/
-        #     Lakes_day1/
-        #         SP27_003_SP5_001/
-        #             COIs/
-        #             rRNAs/
-        
+
         outdir="$(dirname "{output.consensus}")"
         mkdir -p "$outdir"
         mkdir -p "$(dirname "{log}")"
-        
-        # Build AmpliconSorter command
-        
+        mkdir -p "{WORK_DIR}/failures"
+
         cmd=(
             python3
             scripts/auxiliary_code/amplicon_sorter.py
@@ -500,35 +500,27 @@ rule amplicon_sorter:
             {params.min_flag}
             {params.max_flag}
         )
-        
-        # Run AmpliconSorter
-        
-        "${{cmd[@]}}" \
-            > "{log}" \
-            2>&1
-        
-        # Check that AmpliconSorter produced its expected
-        # consensus file.
-        
-        if [ ! -f "$outdir/consensusfile.fasta" ]; then
-            echo \
-                "ERROR: consensusfile.fasta not created" \
-                >> "{log}"
-            exit 1
+
+        if ! "${{cmd[@]}}" > "{log}" 2>&1; then
+            flock "{WORK_DIR}/failures/failures.tsv" -c \
+                'echo -e "{wildcards.sample}\t{wildcards.combo}\t{wildcards.amplicon_type}\tamplicon_sorter\t{log}" >> "{WORK_DIR}/failures/failures.tsv"'
+            touch "{output.consensus}"
+            exit 0
         fi
-        
-        # Convert AmpliconSorter read-count notation.
-        # Example: sequence(123) becomes sequence_readcount_123
-        
+
+        if [ ! -f "$outdir/consensusfile.fasta" ]; then
+            flock "{WORK_DIR}/failures/failures.tsv" -c \
+                'echo -e "{wildcards.sample}\t{wildcards.combo}\t{wildcards.amplicon_type}\tamplicon_sorter\t{log}" >> "{WORK_DIR}/failures/failures.tsv"'
+            touch "{output.consensus}"
+            exit 0
+        fi
+
         seqkit replace \
             -p '\\((\d+)\\)$' \
             -r '_readcount_$1' \
             "$outdir/consensusfile.fasta" \
             > "$outdir/temp.fa"
-        
-        # Replace AmpliconSorter group numbering with explicit
-        # group identifiers.
-        
+
         awk '
         BEGIN {{ counter = 1 }}
         /^>/ {{
@@ -540,22 +532,10 @@ rule amplicon_sorter:
         {{ print }}
         ' "$outdir/temp.fa" \
             > "$outdir/classified.fasta"
-        
-        # Remove intermediate files.
-        
-        rm -f \
-            "$outdir/temp.fa" \
-            "$outdir/consensusfile.fasta"
-        
-        # AmpliconSorter clusters by similarity/size; it does not itself
-        # classify sequences as COI vs rRNA. Each (sample, combo,
-        # amplicon_type) job applies that type's own size filter
-        # (-min/-max above) and writes straight to that type's own
-        # directory, so classified.fasta just needs renaming in place.
-        
-        cp \
-            "$outdir/classified.fasta" \
-            "{output.consensus}"
+
+        rm -f "$outdir/temp.fa" "$outdir/consensusfile.fasta"
+
+        cp "$outdir/classified.fasta" "{output.consensus}"
         """
 # ----------------------------------------
 # 4: Primer removal
@@ -608,6 +588,10 @@ rule primer_removal:
             >> "{log}" 2>&1
         
         mv "{output.fasta}.tmp" "{output.fasta}"
+
+        # Drop any zero-length records left after primer trimming
+        seqkit seq -m 1 "{output.fasta}" > "{output.fasta}.filtered"
+        mv "{output.fasta}.filtered" "{output.fasta}"
         
         # Report stats
         echo "Primer removal complete for {wildcards.sample}/{wildcards.combo}/{wildcards.amplicon_type}" \
@@ -617,7 +601,7 @@ rule primer_removal:
 # ----------------------------------------
 # 5a: Extract rRNAs
 # ----------------------------------------
-rule pybarrnap_extract:
+rule barrnap_extract:
     """
     Extract 18S and 28S rRNA sequences using barrnap.
     """
@@ -642,13 +626,20 @@ rule pybarrnap_extract:
         "envs/pybarrnap.yaml"
     log:
         f"{WORK_DIR}/logs/"
-        f"pybarrnap_{{sample}}_{{combo}}.log"
+        f"barrnap_{{sample}}_{{combo}}.log"
     shell:
         r"""
         set -euo pipefail
         outdir="$(dirname "{output.fasta_18s}")"
         mkdir -p "$outdir"
         mkdir -p "$(dirname "{log}")"
+
+        if [ ! -s "{input.fasta}" ]; then
+            echo "WARNING: {input.fasta} is empty, skipping barrnap" > "{log}"
+            touch "{output.fasta_18s}" "{output.fasta_28s}"
+            exit 0
+        fi
+
         temp_dir="$outdir/{wildcards.combo}_barrnap_temp"
         mkdir -p "$temp_dir"
         barrnap \
