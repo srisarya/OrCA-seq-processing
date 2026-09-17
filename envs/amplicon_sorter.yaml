@@ -1,0 +1,10 @@
+name: amplicon_sorter_env
+channels:
+  - bioconda
+  - conda-forge
+dependencies:
+  - python=3.10
+  - biopython
+  - python-edlib
+  - matplotlib
+  - seqkit=2.9.0

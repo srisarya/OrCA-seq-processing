@@ -1,0 +1,9 @@
+name: pybarrnap_env
+channels:
+  - bioconda
+  - conda-forge
+dependencies:
+  - pybarrnap=0.5.1
+  - infernal
+  - barrnap=0.9
+  - seqkit=2.9.0
