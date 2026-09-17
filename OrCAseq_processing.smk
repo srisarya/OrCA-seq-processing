@@ -67,9 +67,8 @@ PARAM_DEFAULTS = {
     "cutadapt_threads": 4,
     "pychopper_threads": 4,
     "amplicon_sorter_threads": 4,
-    "min_amplicon_size": None,
-    "max_amplicon_size": None,
 }
+
 M13_SEQS = config.get("m13_seqs", PARAM_DEFAULTS["m13_seqs"])
 M13_CONFIG = config.get("m13_config", PARAM_DEFAULTS["m13_config"])
 SP5_ADAPTERS = config.get("sp5_adapters", PARAM_DEFAULTS["sp5_adapters"])
@@ -80,14 +79,42 @@ PYCHOPPER_Q = config.get("pychopper_q_score", PARAM_DEFAULTS["pychopper_q_score"
 CUTADAPT_THREADS = config.get("cutadapt_threads", PARAM_DEFAULTS["cutadapt_threads"])
 PYCHOPPER_THREADS = config.get("pychopper_threads", PARAM_DEFAULTS["pychopper_threads"])
 AS_THREADS = config.get("amplicon_sorter_threads", PARAM_DEFAULTS["amplicon_sorter_threads"])
-MIN_SIZE = config.get("min_amplicon_size", PARAM_DEFAULTS["min_amplicon_size"])
-MAX_SIZE = config.get("max_amplicon_size", PARAM_DEFAULTS["max_amplicon_size"])
+
 INVALID_SP27 = [
     "SP27_009",
     "SP27_010",
     "SP27_011",
     "SP27_012",
 ]
+
+# ----------------------------------------
+# Amplicon decision schema
+# ----------------------------------------
+_amplicon_types_cfg = config.get("amplicon_types")
+if not _amplicon_types_cfg:
+    raise ValueError(
+        "config 'amplicon_types' must define at least one of 'COIs'/'rRNAs', "
+        "each with optional min_size/max_size, e.g.:\n"
+        "amplicon_types:\n  COIs:\n    min_size: 300\n    max_size: 900"
+    )
+
+_VALID_AMPLICON_TYPES = ("COIs", "rRNAs")
+unknown = set(_amplicon_types_cfg) - set(_VALID_AMPLICON_TYPES)
+if unknown:
+    raise ValueError(
+        f"Invalid amplicon_types entries {sorted(unknown)}; "
+        f"must be one or more of {_VALID_AMPLICON_TYPES}"
+    )
+
+AMPLICON_TYPES = [t for t in _VALID_AMPLICON_TYPES if t in _amplicon_types_cfg]
+
+AMPLICON_SIZE_LIMITS = {}
+for _t in AMPLICON_TYPES:
+    _entry = _amplicon_types_cfg[_t] or {}
+    AMPLICON_SIZE_LIMITS[_t] = {
+        "min_size": _entry.get("min_size"),
+        "max_size": _entry.get("max_size"),
+    }
 # ----------------------------------------
 # Helper: discover SP5 identifiers
 # ----------------------------------------
@@ -162,9 +189,22 @@ def get_sp27_combos(wildcards):
 def get_final_targets(wildcards):
     """
     Return the actual final output files generated from the
-    combinations discovered by cutadapt_sp27.
+    combinations discovered by cutadapt_sp27, for every amplicon
+    type this run is configured for (AMPLICON_TYPES). When both
+    COIs and rRNAs are listed in config `amplicon_types`, both
+    sets of final outputs are requested for every combo.
     The dependency chain is:
-        cutadapt_sp5 -> cutadapt_sp27 -> amplicon_sorter -> primer_removal -> pybarrnap_extract / reorganize_cois -> final targets
+        cutadapt_sp5
+            ↓
+        cutadapt_sp27
+            ↓
+        amplicon_sorter (once per amplicon_type)
+            ↓
+        primer_removal
+            ↓
+        pybarrnap_extract (rRNAs) / reorganize_cois (COIs)
+            ↓
+        final targets
     """
     targets = []
     for sample in SAMPLES:
@@ -176,22 +216,24 @@ def get_final_targets(wildcards):
             )()
         )
         for combo in combos:
-            targets.append(
-                os.path.join(
-                    WORK_DIR,
-                    "rRNA_genes",
-                    sample,
-                    f"{combo}_18S.fa"
+            if "rRNAs" in AMPLICON_TYPES:
+                targets.append(
+                    os.path.join(
+                        WORK_DIR,
+                        "rRNA_genes",
+                        sample,
+                        f"{combo}_18S.fa"
+                    )
                 )
-            )
-            targets.append(
-                os.path.join(
-                    WORK_DIR,
-                    "COI_gene",
-                    sample,
-                    f"{combo}_COI.fasta"
+            if "COIs" in AMPLICON_TYPES:
+                targets.append(
+                    os.path.join(
+                        WORK_DIR,
+                        "COI_gene",
+                        sample,
+                        f"{combo}_COI.fasta"
+                    )
                 )
-            )
     return targets
 # ----------------------------------------
 # Rule: all
@@ -370,7 +412,10 @@ checkpoint cutadapt_sp27:
 rule amplicon_sorter:
     """
     Cluster and sort amplicons by sequence similarity and size.
-    One job is run for each concrete sample/combo discovered by the cutadapt_sp27 checkpoint.
+    One job runs per (sample, combo, amplicon_type) discovered/configured,
+    each with its own size filter from AMPLICON_SIZE_LIMITS, so a single
+    workflow run can produce both COI and rRNA outputs from the same
+    demuxed reads when both are listed in config `amplicon_types`.
     """
     input:
         fastq=lambda wc: os.path.join(
@@ -385,16 +430,22 @@ rule amplicon_sorter:
             .get(sample=wc.sample)
             .output.demux_dir
         )
-    output:
-        coi_consensus=(
-            f"{WORK_DIR}/amplicon_sorted/"
-            f"{{sample}}/{{combo}}/"
-            f"COIs/{{combo}}_consensus_COIs.fasta"
+    params:
+        min_flag=lambda wc: (
+            f"-min {AMPLICON_SIZE_LIMITS[wc.amplicon_type]['min_size']}"
+            if AMPLICON_SIZE_LIMITS[wc.amplicon_type]["min_size"] is not None
+            else ""
         ),
-        rrna_consensus=(
+        max_flag=lambda wc: (
+            f"-max {AMPLICON_SIZE_LIMITS[wc.amplicon_type]['max_size']}"
+            if AMPLICON_SIZE_LIMITS[wc.amplicon_type]["max_size"] is not None
+            else ""
+        )
+    output:
+        consensus=(
             f"{WORK_DIR}/amplicon_sorted/"
             f"{{sample}}/{{combo}}/"
-            f"rRNAs/{{combo}}_consensus_rRNAs.fasta"
+            f"{{amplicon_type}}/{{combo}}_consensus_{{amplicon_type}}.fasta"
         )
     threads:
         AS_THREADS
@@ -402,18 +453,21 @@ rule amplicon_sorter:
         "envs/amplicon_sorter.yaml"
     log:
         f"{WORK_DIR}/logs/"
-        f"amplicon_sorter_{{sample}}_{{combo}}.log"
+        f"amplicon_sorter_{{sample}}_{{combo}}_{{amplicon_type}}.log"
     shell:
         r"""
         set -euo pipefail
         
-        # AmpliconSorter output directory
+        # AmpliconSorter output directory -- one per (sample, combo, amplicon_type)
+        # so that COI and rRNA runs for the same combo never share intermediates.
         # Example:
         # results/amplicon_sorted/
         #     Lakes_day1/
         #         SP27_003_SP5_001/
+        #             COIs/
+        #             rRNAs/
         
-        outdir="$(dirname "$(dirname "{output.coi_consensus}")")"
+        outdir="$(dirname "{output.consensus}")"
         mkdir -p "$outdir"
         mkdir -p "$(dirname "{log}")"
         
@@ -426,25 +480,9 @@ rule amplicon_sorter:
             -o "$outdir"
             -ar
             -np {threads}
+            {params.min_flag}
+            {params.max_flag}
         )
-        
-        # Optional minimum amplicon size
-        
-        if [ -n "{MIN_SIZE}" ]; then
-            cmd+=(
-                -min
-                "{MIN_SIZE}"
-            )
-        fi
-        
-        # Optional maximum amplicon size
-        
-        if [ -n "{MAX_SIZE}" ]; then
-            cmd+=(
-                -max
-                "{MAX_SIZE}"
-            )
-        fi
         
         # Run AmpliconSorter
         
@@ -502,20 +540,15 @@ rule amplicon_sorter:
             "$outdir/temp.fa" \
             "$outdir/consensusfile.fasta"
         
-        # IMPORTANT:
-        # At present, the workflow only splits contigs into rRNA/COI, but does not identify exact sequence boundaries for SSU/LSU
-        # Therefore the classified FASTA is copied to both branches.
-        # We can replace this section later with the actual COI/rRNA classification step.
+        # AmpliconSorter clusters by similarity/size; it does not itself
+        # classify sequences as COI vs rRNA. Each (sample, combo,
+        # amplicon_type) job applies that type's own size filter
+        # (-min/-max above) and writes straight to that type's own
+        # directory, so classified.fasta just needs renaming in place.
         
-        mkdir -p \
-            "$(dirname "{output.coi_consensus}")" \
-            "$(dirname "{output.rrna_consensus}")"
         cp \
             "$outdir/classified.fasta" \
-            "{output.coi_consensus}"
-        cp \
-            "$outdir/classified.fasta" \
-            "{output.rrna_consensus}"
+            "{output.consensus}"
         """
 # ----------------------------------------
 # 4: Primer removal
