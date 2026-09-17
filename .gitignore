@@ -334,9 +334,22 @@ FodyWeavers.xsd
 *.msix
 *.msm
 *.msp
+# R analysis
+nanopore-barcoding-ORC.Rproj
 .Rproj.user
+.Rhistory
+scripts/.Rhistory
+.RData
+.DS_Store
+scripts/.DS_Store
 # plot figures and knitted html
 scripts/R_analysis/*html
 scripts/R_analysis/plots/*pdf
 # misc files for R analysis 
 scripts/R_analysis/accessionTaxa.sql
+# snakemake
+input_reads/
+scripts/auxiliary_code/amplicon_sorter.py
+.snakemake
+results/
+pychopper.pdf
