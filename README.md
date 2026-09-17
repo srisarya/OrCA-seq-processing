@@ -145,16 +145,24 @@ The below is a template
 dataset_name: "my_dataset"
 raw_reads: "input_reads/my_dataset"
 
+# Adapter and primer file paths (relative to repo root)
+m13_seqs: "adapters_primers/my_adapters_sequences.fa" # needed for pychopper
+m13_config: "adapters_primers/my_adapters_config.txt" # needed for pychopper
+fwd_adapters: "adapters_primers/forward_adapters.fa" # needed for demux
+rvs_adapters: "adapters_primers/reverse_adapters_reverse_complemented.fa" # needed for demux
+
 # Your specific primers/adapters (relative to repo root)
 r1_primers: "adapters_primers/my_primers.fa"
 r2_primers: null
 
-# Your size filters
-min_amplicon_size: 400
-max_amplicon_size: 1200
-
+# Amplicon types to process, each with its own size filter.
 amplicon_types:
-  - "amplicon"
+  amplicon1:
+    min_size: <int>                    # Minimum rRNA length
+    max_size: <int>                      # Maximum rRNA length
+  amplicon2:
+    min_size: <int>                       # Minimum COI length
+    max_size: <int>                       # Maximum COI length
 ```
 
 Then run:
@@ -201,18 +209,18 @@ results/
 
 ## Performance on MacBook Pro M3
 
-Estimated runtime for ~1M reads per sample:
+Estimated runtime for ~1M reads in the raw dataset:
 
 | Step | Time | Notes |
 |------|------|-------|
-| Pychopper | 45-60 min | I/O bound, ~4 threads |
-| Cutadapt SP5 | 5-10 min | Fast demultiplexing |
-| Cutadapt SP27 | 10-15 min | Per-adapter loop |
-| Amplicon Sorter | 20-30 min | CPU intensive, use 6 threads |
-| Primer Removal | 2-5 min | Fast with cutadapt |
-| Pybarrnap | 10-15 min | covariance model search for rRNAs |
-| COI reorganisation | 1-5 min | just moving files |
-| **Total** | **~1.5 hours** | Per sample |
+| Pychopper | ~60 min | I/O bound, ~4 threads |
+| Cutadapt SP5 | ~20 min | Fast demultiplexing |
+| Cutadapt SP27 | ~20-30 min | Per-adapter loop |
+| Amplicon Sorter | ~20-30 min | CPU intensive, use 6 threads |
+| Primer Removal | ~5-10 min | Fast with cutadapt |
+| Pybarrnap | ~10-15 min | covariance model search for rRNAs |
+| COI reorganisation | ~1-5 min | just moving files |
+| **Total** | **~2 hours** | Per sample |
 
 ## Memory Considerations
 
@@ -225,6 +233,7 @@ If memory is an issue:
 
 If it's too slow:
 - Increase thread counts (`-c 6`) or if your laptop is more powerful, up threads more
+- NOTE: don't bother upping threads for pychopper, since it's I/O bound. An informal test with 8 threads made it very slow.
 
 ## Troubleshooting
 
