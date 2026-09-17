@@ -61,8 +61,6 @@ PARAM_DEFAULTS = {
     "m13_config": "adapters_primers/M13_config_for_pychopper.txt",
     "sp5_adapters": "adapters_primers/M13_amplicon_indices_forward.fa",
     "sp27_adapters": "adapters_primers/M13_amplicon_indices_reverse_rc.fa",
-    "r1_primers": "adapters_primers/COI_primers.fa",
-    "r2_primers": None,
     "pychopper_q_score": 10,
     "cutadapt_threads": 4,
     "pychopper_threads": 4,
@@ -73,8 +71,6 @@ M13_SEQS = config.get("m13_seqs", PARAM_DEFAULTS["m13_seqs"])
 M13_CONFIG = config.get("m13_config", PARAM_DEFAULTS["m13_config"])
 SP5_ADAPTERS = config.get("sp5_adapters", PARAM_DEFAULTS["sp5_adapters"])
 SP27_ADAPTERS = config.get("sp27_adapters", PARAM_DEFAULTS["sp27_adapters"])
-R1_PRIMERS = config.get("r1_primers", PARAM_DEFAULTS["r1_primers"])
-R2_PRIMERS = config.get("r2_primers", PARAM_DEFAULTS["r2_primers"])
 PYCHOPPER_Q = config.get("pychopper_q_score", PARAM_DEFAULTS["pychopper_q_score"])
 CUTADAPT_THREADS = config.get("cutadapt_threads", PARAM_DEFAULTS["cutadapt_threads"])
 PYCHOPPER_THREADS = config.get("pychopper_threads", PARAM_DEFAULTS["pychopper_threads"])
@@ -115,6 +111,27 @@ for _t in AMPLICON_TYPES:
         "min_size": _entry.get("min_size"),
         "max_size": _entry.get("max_size"),
     }
+
+# ----------------------------------------
+# Primer files per amplicon type
+# ----------------------------------------
+_primers_cfg = config.get("primers")
+if not _primers_cfg:
+    raise ValueError(
+        "config 'primers' must map each amplicon_type to a primer FASTA, e.g.:\n"
+        "primers:\n  COIs: adapters_primers/COI_primers.fa\n"
+        "  rRNAs: adapters_primers/RNA_primers.fa"
+    )
+
+missing_primers = set(AMPLICON_TYPES) - set(_primers_cfg)
+if missing_primers:
+    raise ValueError(
+        f"config 'primers' is missing entries for amplicon_types "
+        f"{sorted(missing_primers)}; every configured amplicon_type needs "
+        f"a primer file"
+    )
+
+PRIMER_FILES = {t: _primers_cfg[t] for t in AMPLICON_TYPES}
 # ----------------------------------------
 # Helper: discover SP5 identifiers
 # ----------------------------------------
@@ -545,22 +562,22 @@ rule amplicon_sorter:
 # ----------------------------------------
 rule primer_removal:
     """
-    Remove COI/rRNA primer sequences from each
-    AmpliconSorter consensus FASTA.
+    Remove forward and reverse primers from consensus sequences using cutadapt.
+    One job runs per (sample, combo, amplicon_type), using the primer file
+    configured for that amplicon_type.
     """
     input:
-        consensus=(
+        fasta=(
             f"{WORK_DIR}/amplicon_sorted/"
             f"{{sample}}/{{combo}}/"
-            f"{{amplicon_type}}/"
-            f"{{combo}}_consensus_{{amplicon_type}}.fasta"
-        )
+            f"{{amplicon_type}}/{{combo}}_consensus_{{amplicon_type}}.fasta"
+        ),
+        primers=lambda wc: PRIMER_FILES[wc.amplicon_type]
     output:
-        cleaned=(
+        fasta=(
             f"{WORK_DIR}/primerless/"
             f"{{sample}}/{{combo}}/"
-            f"{{amplicon_type}}/"
-            f"cleaned_amplicon_{{combo}}.fasta"
+            f"{{amplicon_type}}/cleaned_amplicon_{{combo}}.fasta"
         )
     threads:
         2
@@ -568,44 +585,35 @@ rule primer_removal:
         "envs/cutadapt.yaml"
     log:
         f"{WORK_DIR}/logs/"
-        f"primer_removal_{{sample}}_{{combo}}_"
-        f"{{amplicon_type}}.log"
+        f"primer_removal_{{sample}}_{{combo}}_{{amplicon_type}}.log"
     shell:
         r"""
         set -euo pipefail
-        outdir="$(dirname "{output.cleaned}")"
-        mkdir -p "$outdir"
+        mkdir -p "$(dirname "{output.fasta}")"
         mkdir -p "$(dirname "{log}")"
-        r1_primers="{R1_PRIMERS}"
-        untrimmed="$outdir/untrimmed_round1_{wildcards.combo}.fasta"
-        fwd_primer="$(
-            grep -A1 "^>.*Forward" "$r1_primers" |
-            grep -v "^--$" |
-            grep -v "^>" |
-            head -1
-        )"
-        rev_primer="$(
-            grep -A1 "^>.*Reverse" "$r1_primers" |
-            grep -v "^--$" |
-            grep -v "^>" |
-            head -1
-        )"
-        if [ -n "$fwd_primer" ] && [ -n "$rev_primer" ]; then
-            cutadapt \
-                -j {threads} \
-                -g "${{fwd_primer}}...${{rev_primer}}" \
-                --untrimmed-output="$untrimmed" \
-                -o "{output.cleaned}" \
-                "{input.consensus}" \
-                2> "{log}"
-        else
-            cp "{input.consensus}" "{output.cleaned}"
-            echo \
-                "WARNING: Could not parse primers; copying input to output" \
-                >> "{log}"
-        fi
-        rm -f "$untrimmed"
+        
+        # Remove forward primers (5' end) from all sequences
+        cutadapt \
+            -g "file:{input.primers}" \
+            -o "{output.fasta}" \
+            "{input.fasta}" \
+            2> "{log}"
+        
+        # Remove reverse primers (3' end) from all sequences
+        # cutadapt will automatically reverse-complement for -a mode
+        cutadapt \
+            -a "file:{input.primers}" \
+            -o "{output.fasta}.tmp" \
+            "{output.fasta}" \
+            >> "{log}" 2>&1
+        
+        mv "{output.fasta}.tmp" "{output.fasta}"
+        
+        # Report stats
+        echo "Primer removal complete for {wildcards.sample}/{wildcards.combo}/{wildcards.amplicon_type}" \
+            >> "{log}"
         """
+
 # ----------------------------------------
 # 5a: Extract rRNAs
 # ----------------------------------------
