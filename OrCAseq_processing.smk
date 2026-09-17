@@ -70,7 +70,6 @@ PARAM_DEFAULTS = {
     "min_amplicon_size": None,
     "max_amplicon_size": None,
 }
-
 M13_SEQS = config.get("m13_seqs", PARAM_DEFAULTS["m13_seqs"])
 M13_CONFIG = config.get("m13_config", PARAM_DEFAULTS["m13_config"])
 SP5_ADAPTERS = config.get("sp5_adapters", PARAM_DEFAULTS["sp5_adapters"])
@@ -83,7 +82,6 @@ PYCHOPPER_THREADS = config.get("pychopper_threads", PARAM_DEFAULTS["pychopper_th
 AS_THREADS = config.get("amplicon_sorter_threads", PARAM_DEFAULTS["amplicon_sorter_threads"])
 MIN_SIZE = config.get("min_amplicon_size", PARAM_DEFAULTS["min_amplicon_size"])
 MAX_SIZE = config.get("max_amplicon_size", PARAM_DEFAULTS["max_amplicon_size"])
-
 INVALID_SP27 = [
     "SP27_009",
     "SP27_010",
@@ -166,17 +164,7 @@ def get_final_targets(wildcards):
     Return the actual final output files generated from the
     combinations discovered by cutadapt_sp27.
     The dependency chain is:
-        cutadapt_sp5
-            ↓
-        cutadapt_sp27
-            ↓
-        amplicon_sorter
-            ↓
-        primer_removal
-            ↓
-        pybarrnap_extract / reorganize_cois
-            ↓
-        final targets
+        cutadapt_sp5 -> cutadapt_sp27 -> amplicon_sorter -> primer_removal -> pybarrnap_extract / reorganize_cois -> final targets
     """
     targets = []
     for sample in SAMPLES:
@@ -515,7 +503,7 @@ rule amplicon_sorter:
             "$outdir/consensusfile.fasta"
         
         # IMPORTANT:
-        # At present, the workflow does NOT actually classify sequences as COI versus rRNA.
+        # At present, the workflow only splits contigs into rRNA/COI, but does not identify exact sequence boundaries for SSU/LSU
         # Therefore the classified FASTA is copied to both branches.
         # We can replace this section later with the actual COI/rRNA classification step.
         
