@@ -211,17 +211,7 @@ def get_final_targets(wildcards):
     COIs and rRNAs are listed in config `amplicon_types`, both
     sets of final outputs are requested for every combo.
     The dependency chain is:
-        cutadapt_sp5
-            ↓
-        cutadapt_sp27
-            ↓
-        amplicon_sorter (once per amplicon_type)
-            ↓
-        primer_removal
-            ↓
-        barrnap_extract (rRNAs) / reorganize_cois (COIs)
-            ↓
-        final targets
+        cutadapt_sp5 -> cutadapt_sp27 -> amplicon_sorter (once per amplicon_type) -> primer_removal -> barrnap_extract (rRNAs) / reorganize_cois (COIs) -> final targets
     """
     targets = []
     for sample in SAMPLES:
