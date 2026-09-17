@@ -513,24 +513,14 @@ rule amplicon_sorter:
         # group identifiers.
         
         awk '
-        BEGIN {{
-            counter = 1
-        }}
+        BEGIN {{ counter = 1 }}
         /^>/ {{
-            if (match(
-                $0,
-                /_[0-9]+_[0-9]+_readcount/
-            )) {{
-                sub(
-                    /_[0-9]+_[0-9]+_readcount/,
-                    "_group" counter "_readcount"
-                )
+            if (match($0, /_[0-9]+_[0-9]+_readcount/)) {{
+                sub(/_[0-9]+_[0-9]+_readcount/, "_group" counter "_readcount")
                 counter++
             }}
         }}
-        {{
-            print
-        }}
+        {{ print }}
         ' "$outdir/temp.fa" \
             > "$outdir/classified.fasta"
         
