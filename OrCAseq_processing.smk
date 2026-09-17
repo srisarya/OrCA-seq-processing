@@ -502,15 +502,13 @@ rule amplicon_sorter:
         )
 
         if ! "${{cmd[@]}}" > "{log}" 2>&1; then
-            flock "{WORK_DIR}/failures/failures.tsv" -c \
-                'echo -e "{wildcards.sample}\t{wildcards.combo}\t{wildcards.amplicon_type}\tamplicon_sorter\t{log}" >> "{WORK_DIR}/failures/failures.tsv"'
+            echo -e "{wildcards.sample}\t{wildcards.combo}\t{wildcards.amplicon_type}\tamplicon_sorter\t{log}" >> "{WORK_DIR}/failures/failures.tsv"
             touch "{output.consensus}"
             exit 0
         fi
 
         if [ ! -f "$outdir/consensusfile.fasta" ]; then
-            flock "{WORK_DIR}/failures/failures.tsv" -c \
-                'echo -e "{wildcards.sample}\t{wildcards.combo}\t{wildcards.amplicon_type}\tamplicon_sorter\t{log}" >> "{WORK_DIR}/failures/failures.tsv"'
+            echo -e "{wildcards.sample}\t{wildcards.combo}\t{wildcards.amplicon_type}\tamplicon_sorter\t{log}" >> "{WORK_DIR}/failures/failures.tsv"
             touch "{output.consensus}"
             exit 0
         fi
