@@ -13,14 +13,18 @@ m13_seqs: "adapters_primers/M13_seqs_for_pychopper.fa"
 m13_config: "adapters_primers/M13_config_for_pychopper.txt"
 sp5_adapters: "adapters_primers/M13_amplicon_indices_forward.fa"
 sp27_adapters: "adapters_primers/M13_amplicon_indices_reverse_rc.fa"
-r1_primers: "adapters_primers/COI_primers.fa"
-r2_primers: null                      # Set to filepath if using Round 2 primer trimming
+
+# Primer files per amplicon type -- each amplicon_type below must have
+# a matching entry here so primer_removal strips the correct primers.
+primers:
+  COIs: "adapters_primers/COI_primers.fa"
+  rRNAs: "adapters_primers/RNA_primers.fa"
 
 # Processing parameters
 pychopper_q_score: 10 # Quality score threshold for pychopper
 pychopper_threads: 4 # pychopper threads (M3 has 8 cores)
 cutadapt_threads: 4 # cutadapt threads
-amplicon_sorter_threads: 4 # amplicon_sorter threads
+amplicon_sorter_threads: 6 # amplicon_sorter threads
 
 # Amplicon types to process, each with its own size filter.
 amplicon_types:
@@ -29,4 +33,4 @@ amplicon_types:
     max_size: 3500                    # Maximum rRNA length
   COIs:
     min_size: 300                     # Minimum COI length
-    max_size: 900                     # Maximum COI length
+    max_size: 900                     #
