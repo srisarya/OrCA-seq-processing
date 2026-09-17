@@ -1,0 +1,32 @@
+# OrCA-seq processing workflow configuration
+# MacBook Pro M3 (16GB) - local execution settings
+
+# Dataset identification
+dataset_name: "Lakes_day1"
+
+# Input/Output directories
+raw_reads: "input_reads" # Directory containing input FASTQ files
+work_dir: "results" # All outputs go here
+
+# Adapter and primer file paths (relative to repo root)
+m13_seqs: "adapters_primers/M13_seqs_for_pychopper.fa"
+m13_config: "adapters_primers/M13_config_for_pychopper.txt"
+sp5_adapters: "adapters_primers/M13_amplicon_indices_forward.fa"
+sp27_adapters: "adapters_primers/M13_amplicon_indices_reverse_rc.fa"
+r1_primers: "adapters_primers/COI_primers.fa"
+r2_primers: null                      # Set to filepath if using Round 2 primer trimming
+
+# Processing parameters
+pychopper_q_score: 10 # Quality score threshold for pychopper
+pychopper_threads: 4 # pychopper threads (M3 has 8 cores)
+cutadapt_threads: 4 # cutadapt threads
+amplicon_sorter_threads: 4 # amplicon_sorter threads
+
+# Amplicon types to process, each with its own size filter.
+amplicon_types:
+  rRNAs:
+    min_size: 1000                    # Minimum rRNA length
+    max_size: 3500                    # Maximum rRNA length
+  COIs:
+    min_size: 300                     # Minimum COI length
+    max_size: 900                     # Maximum COI length
