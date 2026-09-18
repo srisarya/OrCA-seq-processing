@@ -33,6 +33,6 @@ amplicon_types:
   rRNAs:
     min_size: 1000                    # Minimum rRNA length
     max_size: 3500                    # Maximum rRNA length
-  # COIs:
-  #   min_size: 300                     # Minimum COI length
-  #   max_size: 900                     # Maximum COI length
+  COIs:
+    min_size: 300                     # Minimum COI length
+    max_size: 900                     # Maximum COI length
