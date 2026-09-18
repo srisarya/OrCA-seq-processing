@@ -65,6 +65,8 @@ PARAM_DEFAULTS = {
     "cutadapt_threads": 4,
     "pychopper_threads": 4,
     "amplicon_sorter_threads": 4,
+    "primer_removal_threads": 1,
+    "barrnap_threads": 1,
 }
 
 M13_SEQS = config.get("m13_seqs", PARAM_DEFAULTS["m13_seqs"])
@@ -75,6 +77,8 @@ PYCHOPPER_Q = config.get("pychopper_q_score", PARAM_DEFAULTS["pychopper_q_score"
 CUTADAPT_THREADS = config.get("cutadapt_threads", PARAM_DEFAULTS["cutadapt_threads"])
 PYCHOPPER_THREADS = config.get("pychopper_threads", PARAM_DEFAULTS["pychopper_threads"])
 AS_THREADS = config.get("amplicon_sorter_threads", PARAM_DEFAULTS["amplicon_sorter_threads"])
+PRIMER_REMOVAL_THREADS = config.get("primer_removal_threads", PARAM_DEFAULTS["primer_removal_threads"])
+BARRNAP_THREADS = config.get("barrnap_threads", PARAM_DEFAULTS["barrnap_threads"])  
 
 INVALID_SP27 = [
     "SP27_009",
@@ -503,25 +507,30 @@ rule amplicon_sorter:
             exit 0
         fi
 
-        seqkit replace \
-            -p '\\((\d+)\\)$' \
-            -r '_readcount_$1' \
-            "$outdir/consensusfile.fasta" \
-            > "$outdir/temp.fa"
-
         awk '
-        BEGIN {{ counter = 1 }}
+        BEGIN {{
+            dataset_label = dataset
+            sub(/^[^_]+_/, "", dataset_label)
+        }}
         /^>/ {{
-            if (match($0, /_[0-9]+_[0-9]+_readcount/)) {{
-                sub(/_[0-9]+_[0-9]+_readcount/, "_group" counter "_readcount")
-                counter++
+            prefix = ">consensus_" combo "_" dataset "_"
+            if (index($0, prefix) == 1) {{
+                suffix = substr($0, length(prefix) + 1)
+                gsub(/[()]/, "_", suffix)
+                split(suffix, fields, "_")
+                if (fields[1] ~ /^[0-9]+$/ && fields[3] ~ /^[0-9]+$/) {{
+                    $0 = ">consensus_" combo "_" dataset_label \
+                        "_pass_group" fields[1] "_readcount_" fields[3]
+                }}
             }}
         }}
         {{ print }}
-        ' "$outdir/temp.fa" \
+        ' -v combo="{wildcards.combo}" \
+          -v dataset="{DATASET_NAME}" \
+          "$outdir/consensusfile.fasta" \
             > "$outdir/classified.fasta"
 
-        rm -f "$outdir/temp.fa" "$outdir/consensusfile.fasta"
+        rm -f "$outdir/consensusfile.fasta"
 
         cp "$outdir/classified.fasta" "{output.consensus}"
         """
@@ -548,7 +557,7 @@ rule primer_removal:
             f"{{amplicon_type}}/cleaned_amplicon_{{combo}}.fasta"
         )
     threads:
-        2
+        PRIMER_REMOVAL_THREADS
     conda:
         "envs/cutadapt.yaml"
     log:
@@ -563,6 +572,7 @@ rule primer_removal:
         # Remove forward primers (5' end) from all sequences
         cutadapt \
             -g "file:{input.primers}" \
+            -j {threads} \
             -o "{output.fasta}" \
             "{input.fasta}" \
             2> "{log}"
@@ -607,9 +617,21 @@ rule barrnap_extract:
         fasta_28s=(
             f"{WORK_DIR}/rRNA_genes/"
             f"{{sample}}/{{combo}}_28S.fa"
+        ),
+        filtered_fasta=temp(
+            f"{WORK_DIR}/rRNA_genes/"
+            f"{{sample}}/{{combo}}_barrnap_nonempty.fa"
+        ),
+        barrnap_fasta=temp(
+            f"{WORK_DIR}/rRNA_genes/"
+            f"{{sample}}/{{combo}}_barrnap_euk.fa"
+        ),
+        barrnap_gff=temp(
+            f"{WORK_DIR}/rRNA_genes/"
+            f"{{sample}}/{{combo}}_barrnap_euk.gff3"
         )
     threads:
-        2
+        BARRNAP_THREADS
     conda:
         "envs/pybarrnap.yaml"
     log:
@@ -622,34 +644,34 @@ rule barrnap_extract:
         mkdir -p "$outdir"
         mkdir -p "$(dirname "{log}")"
 
-        if [ ! -s "{input.fasta}" ]; then
-            echo "WARNING: {input.fasta} is empty, skipping barrnap" > "{log}"
-            touch "{output.fasta_18s}" "{output.fasta_28s}"
+        seqkit seq -m 10 "{input.fasta}" > "{output.filtered_fasta}"
+        if [ ! -s "{output.filtered_fasta}" ]; then
+            echo "WARNING: {input.fasta} contains no FASTA entries at least 10 bp long, skipping barrnap" > "{log}"
+            touch "{output.fasta_18s}" "{output.fasta_28s}" \
+                "{output.barrnap_fasta}" "{output.barrnap_gff}"
             exit 0
         fi
 
-        temp_dir="$outdir/{wildcards.combo}_barrnap_temp"
-        mkdir -p "$temp_dir"
         barrnap \
             -k euk \
             --incseq \
-            -o "$temp_dir/{wildcards.combo}_euk.fa" \
-            "{input.fasta}" \
-            > "$temp_dir/{wildcards.combo}_euk.gff3" \
+            --threads {threads} \
+            -o "{output.barrnap_fasta}" \
+            "{output.filtered_fasta}" \
+            > "{output.barrnap_gff}" \
             2> "{log}"
         seqkit grep \
             -r \
             -p "18S_rRNA" \
-            "$temp_dir/{wildcards.combo}_euk.fa" \
+            "{output.barrnap_fasta}" \
             > "{output.fasta_18s}" \
             2>> "{log}" || true
         seqkit grep \
             -r \
             -p "28S_rRNA" \
-            "$temp_dir/{wildcards.combo}_euk.fa" \
+            "{output.barrnap_fasta}" \
             > "{output.fasta_28s}" \
             2>> "{log}" || true
-        rm -rf "$temp_dir"
         """
 # ----------------------------------------
 # 5b: Reorganize COIs

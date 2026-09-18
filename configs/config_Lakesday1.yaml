@@ -25,12 +25,14 @@ pychopper_q_score: 10 # Quality score threshold for pychopper
 pychopper_threads: 4 # pychopper threads (M3 has 8 cores)
 cutadapt_threads: 4 # cutadapt threads
 amplicon_sorter_threads: 6 # amplicon_sorter threads
+primer_removal_threads: 1 # primer removal threads
+barrnap_threads: 1 # barrnap threads
 
 # Amplicon types to process, each with its own size filter.
 amplicon_types:
   rRNAs:
     min_size: 1000                    # Minimum rRNA length
     max_size: 3500                    # Maximum rRNA length
-  COIs:
-    min_size: 300                     # Minimum COI length
-    max_size: 900                     #
+  # COIs:
+  #   min_size: 300                     # Minimum COI length
+  #   max_size: 900                     # Maximum COI length
