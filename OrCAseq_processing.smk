@@ -485,7 +485,7 @@ rule amplicon_sorter:
         mkdir -p "{WORK_DIR}/failures"
 
         cmd=(
-            python3
+            python
             scripts/auxiliary_code/amplicon_sorter.py
             -i "{input.fastq}"
             -o "$outdir"
