@@ -633,7 +633,7 @@ rule barrnap_extract:
     threads:
         BARRNAP_THREADS
     conda:
-        "envs/pybarrnap.yaml"
+        "envs/barrnap.yaml"
     log:
         f"{WORK_DIR}/logs/"
         f"barrnap_{{sample}}_{{combo}}.log"
