@@ -7,7 +7,6 @@ Covers: pychopper -> cutadapt (SP5 x SP27 demux) -> amplicon_sorter -> primer_re
 # ----------------------------------------
 import os
 import re
-import glob
 from pathlib import Path
 configfile: "config.yaml"
 # ----------------------------------------
@@ -137,131 +136,74 @@ if missing_primers:
 
 PRIMER_FILES = {t: _primers_cfg[t] for t in AMPLICON_TYPES}
 # ----------------------------------------
-# Helper: discover SP5 identifiers
+# Static barcode combinations
 # ----------------------------------------
-def get_sp5_identifiers(wildcards):
-    """
-    Discover the SP5 identifiers produced by the SP5 checkpoint.
-    This function is evaluated after cutadapt_sp5 has completed.
-    """
-    checkpoint_output = (
-        checkpoints.cutadapt_sp5
-        .get(sample=wildcards.sample)
-        .output.demux_dir
-    )
-    ck_dir = str(checkpoint_output)
-    suffix = f"_{DATASET_NAME}.fastq.gz"
-    pattern = os.path.join(
-        ck_dir,
-        f"*{suffix}"
-    )
-    files = glob.glob(pattern)
+def read_adapter_ids(path, prefix):
+    """Read unique adapter IDs from FASTA headers and validate their prefix."""
     identifiers = []
-    for filepath in files:
-        basename = os.path.basename(filepath)
-        if not basename.endswith(suffix):
-            continue
-        identifier = basename[:-len(suffix)]
-        if identifier == "unknown":
-            continue
-        # Ignore the cutadapt JSON file if its name happens to match anything unexpectedly.
-        if not filepath.endswith(".fastq.gz"):
-            continue
-        identifiers.append(identifier)
-    return sorted(set(identifiers))
-# ----------------------------------------
-# Helper: discover SP27 combinations
-# ----------------------------------------
-def get_sp27_combos(wildcards):
-    """
-    Discover the concrete SP27/SP5 combinations produced by
-    cutadapt_sp27 for a given sample.
-    Example:
-        SP27_001_SP5_003
-        SP27_001_SP5_002
-        SP27_006_SP5_008
-    """
-    checkpoint_output = (
-        checkpoints.cutadapt_sp27
-        .get(sample=wildcards.sample)
-        .output.demux_dir
-    )
-    ck_dir = str(checkpoint_output)
-    suffix = f"_{DATASET_NAME}.fastq.gz"
-    files = glob.glob(
-        os.path.join(
-            ck_dir,
-            f"*{suffix}"
-        )
-    )
-    combos = []
-    for filepath in files:
-        basename = os.path.basename(filepath)
-        if not basename.endswith(suffix):
-            continue
-        combo = basename[:-len(suffix)]
-        if combo == "unknown":
-            continue
-        combos.append(combo)
-    return sorted(set(combos))
-# ----------------------------------------
-# Helper: discover final targets
-# ----------------------------------------
-def get_final_targets(wildcards):
-    """
-    Return the actual final output files generated from the
-    combinations discovered by cutadapt_sp27, for every amplicon
-    type this run is configured for (AMPLICON_TYPES). When both
-    COIs and rRNAs are listed in config `amplicon_types`, both
-    sets of final outputs are requested for every combo.
-    The dependency chain is:
-        cutadapt_sp5 -> cutadapt_sp27 -> amplicon_sorter (once per amplicon_type) -> primer_removal -> barrnap_extract (rRNAs) / reorganize_cois (COIs) -> final targets
-    """
-    targets = []
-    for sample in SAMPLES:
-        combos = get_sp27_combos(
-            type(
-                "Wildcards",
-                (),
-                {"sample": sample}
-            )()
-        )
-        for combo in combos:
-            if "rRNAs" in AMPLICON_TYPES:
-                targets.append(
-                    os.path.join(
-                        WORK_DIR,
-                        "rRNA_genes",
-                        sample,
-                        f"{combo}_18S.fa"
+    with open(path) as adapter_file:
+        for line in adapter_file:
+            if line.startswith(">"):
+                identifier = line[1:].strip().split()[0]
+                if not identifier.startswith(prefix):
+                    raise ValueError(
+                        f"Unexpected adapter ID '{identifier}' in {path}; "
+                        f"expected prefix '{prefix}'"
                     )
-                )
-        for combo in combos:
-            if "rRNAs" in AMPLICON_TYPES:
-                targets.append(
-                    os.path.join(
-                        WORK_DIR,
-                        "rRNA_genes",
-                        sample,
-                        f"{combo}_28S.fa"
-                    )
-                )
-            if "COIs" in AMPLICON_TYPES:
-                targets.append(
-                    os.path.join(
-                        WORK_DIR,
-                        "COI_gene",
-                        sample,
-                        f"{combo}_COI.fasta"
-                    )
-                )
-    return targets
+                identifiers.append(identifier)
+    if not identifiers or len(identifiers) != len(set(identifiers)):
+        raise ValueError(f"Adapter FASTA must contain unique IDs: {path}")
+    return sorted(identifiers)
+
+
+SP5_IDENTIFIERS = read_adapter_ids(SP5_ADAPTERS, "SP5_")
+SP27_IDENTIFIERS = read_adapter_ids(SP27_ADAPTERS, "SP27_")
+VALID_SP27_IDENTIFIERS = [
+    identifier
+    for identifier in SP27_IDENTIFIERS
+    if identifier not in INVALID_SP27
+]
+COMBOS = [
+    f"{sp27}_{sp5}"
+    for sp27 in VALID_SP27_IDENTIFIERS
+    for sp5 in SP5_IDENTIFIERS
+]
+SP5_FASTQ_OUTPUTS = [
+    f"{WORK_DIR}/demuxed/SP5/{{{{sample}}}}/{identifier}_{DATASET_NAME}.fastq.gz"
+    for identifier in SP5_IDENTIFIERS
+]
+SP27_FASTQ_OUTPUTS = [
+    f"{WORK_DIR}/demuxed/SP27/{{{{sample}}}}/{combo}_{DATASET_NAME}.fastq.gz"
+    for combo in COMBOS
+]
+SP27_REPORT_OUTPUTS = [
+    f"{WORK_DIR}/demuxed/SP27/{{{{sample}}}}/{identifier}_{DATASET_NAME}.json"
+    for identifier in SP5_IDENTIFIERS
+]
+
+if not VALID_SP27_IDENTIFIERS:
+    raise ValueError("No valid SP27 adapters remain after INVALID_SP27 filtering")
+
+FINAL_TARGETS = []
+for sample in SAMPLES:
+    for combo in COMBOS:
+        if "rRNAs" in AMPLICON_TYPES:
+            FINAL_TARGETS.extend(
+                [
+                    os.path.join(WORK_DIR, "rRNA_genes", sample, f"{combo}_18S.fa"),
+                    os.path.join(WORK_DIR, "rRNA_genes", sample, f"{combo}_28S.fa"),
+                ]
+            )
+        if "COIs" in AMPLICON_TYPES:
+            FINAL_TARGETS.append(
+                os.path.join(WORK_DIR, "COI_gene", sample, f"{combo}_COI.fasta")
+            )
 # ----------------------------------------
 # Rule: all
 # ----------------------------------------
 rule all:
     input:
-        get_final_targets
+        FINAL_TARGETS
 # ----------------------------------------
 # 1: Pychopper
 # ----------------------------------------
@@ -335,13 +277,12 @@ rule gzip_pychopped:
 # ----------------------------------------
 # 2a: Cutadapt SP5
 # ----------------------------------------
-checkpoint cutadapt_sp5:
+rule cutadapt_sp5:
     input:
         f"{WORK_DIR}/pychopped/{{sample}}_pass.fastq.gz"
     output:
-        demux_dir=directory(
-            f"{WORK_DIR}/demuxed/SP5/{{sample}}"
-        )
+        fastqs=SP5_FASTQ_OUTPUTS,
+        report=f"{WORK_DIR}/demuxed/SP5/{{sample}}/cutadapt_SP5_{DATASET_NAME}.json"
     threads:
         CUTADAPT_THREADS
     conda:
@@ -351,7 +292,8 @@ checkpoint cutadapt_sp5:
     shell:
         r"""
         set -euo pipefail
-        mkdir -p "{output.demux_dir}"
+        outdir="$(dirname "{output.fastqs[0]}")"
+        mkdir -p "$outdir"
         mkdir -p "$(dirname "{log}")"
         cutadapt \
             --action=trim \
@@ -359,11 +301,11 @@ checkpoint cutadapt_sp5:
             -j {threads} \
             --rc \
             -g "file:{SP5_ADAPTERS}" \
-            -o "{output.demux_dir}/{{name}}_{DATASET_NAME}.fastq.gz" \
+            -o "$outdir/{{name}}_{DATASET_NAME}.fastq.gz" \
             "{input}" \
-            --json="{output.demux_dir}/cutadapt_SP5_{DATASET_NAME}.json" \
+            --json="{output.report}" \
             2> "{log}"
-        find "{output.demux_dir}" \
+        find "$outdir" \
             -type f \
             -name "*unknown*" \
             -delete || true
@@ -371,18 +313,15 @@ checkpoint cutadapt_sp5:
 # ----------------------------------------
 # 2b: Cutadapt SP27
 # ----------------------------------------
-checkpoint cutadapt_sp27:
+rule cutadapt_sp27:
     input:
-        sp5_dir=(
-            f"{WORK_DIR}/demuxed/SP5/{{sample}}"
-        )
+        sp5_fastqs=SP5_FASTQ_OUTPUTS
     output:
-        demux_dir=directory(
-            f"{WORK_DIR}/demuxed/SP27/{{sample}}"
-        )
+        fastqs=SP27_FASTQ_OUTPUTS,
+        reports=SP27_REPORT_OUTPUTS
     params:
-        identifiers=get_sp5_identifiers,
-        invalid=INVALID_SP27
+        identifiers=" ".join(SP5_IDENTIFIERS),
+        invalid=" ".join(INVALID_SP27)
     threads:
         CUTADAPT_THREADS
     conda:
@@ -392,36 +331,31 @@ checkpoint cutadapt_sp27:
     shell:
         r"""
         set -euo pipefail
-        mkdir -p "{output.demux_dir}"
+        outdir="$(dirname "{output.fastqs[0]}")"
+        mkdir -p "$outdir"
         mkdir -p "$(dirname "{log}")"
         : > "{log}"
-        # Process every SP5 identifier discovered by the cutadapt_sp5 checkpoint.
         for identifier in {params.identifiers}; do
             echo "Processing: ${{identifier}}" >> "{log}"
-            input_file="{input.sp5_dir}/${{identifier}}_{DATASET_NAME}.fastq.gz"
-            if [ ! -f "$input_file" ]; then
-                echo "WARNING: missing $input_file" >> "{log}"
-                continue
-            fi
+            input_file="$(dirname "{input.sp5_fastqs[0]}")/${{identifier}}_{DATASET_NAME}.fastq.gz"
             cutadapt \
                 --action=trim \
                 -e 0.1 \
                 -j {threads} \
                 --rc \
                 -a "file:{SP27_ADAPTERS}" \
-                -o "{output.demux_dir}/{{name}}_${{identifier}}_{DATASET_NAME}.fastq.gz" \
+                -o "$outdir/{{name}}_${{identifier}}_{DATASET_NAME}.fastq.gz" \
                 "$input_file" \
-                --json="{output.demux_dir}/${{identifier}}_{DATASET_NAME}.json" \
+                --json="$outdir/${{identifier}}_{DATASET_NAME}.json" \
                 >> "{log}" 2>&1
         done
         # Remove unknown reads.
-        find "{output.demux_dir}" \
+        find "$outdir" \
             -type f \
             -name "*unknown*" \
             -delete || true
-        # Remove invalid SP27 combinations.
         for bad in {params.invalid}; do
-            find "{output.demux_dir}" \
+            find "$outdir" \
                 -type f \
                 -name "${{bad}}_*_{DATASET_NAME}.fastq.gz" \
                 -delete || true
@@ -445,11 +379,6 @@ rule amplicon_sorter:
             "SP27",
             wc.sample,
             f"{wc.combo}_{DATASET_NAME}.fastq.gz"
-        ),
-        sp27_checkpoint=lambda wc: (
-            checkpoints.cutadapt_sp27
-            .get(sample=wc.sample)
-            .output.demux_dir
         )
     params:
         min_flag=lambda wc: (
@@ -507,7 +436,9 @@ rule amplicon_sorter:
             exit 0
         fi
 
-        awk '
+                awk -v combo="{wildcards.combo}" \
+                    -v dataset="{DATASET_NAME}" \
+                '
         BEGIN {{
             dataset_label = dataset
             sub(/^[^_]+_/, "", dataset_label)
@@ -525,8 +456,6 @@ rule amplicon_sorter:
             }}
         }}
         {{ print }}
-        ' -v combo="{wildcards.combo}" \
-          -v dataset="{DATASET_NAME}" \
           "$outdir/consensusfile.fasta" \
             > "$outdir/classified.fasta"
 
