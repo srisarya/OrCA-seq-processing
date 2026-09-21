@@ -216,11 +216,16 @@ Estimated runtime for ~1M reads in the raw dataset:
 | Pychopper | ~60 min | I/O bound, ~4 threads |
 | Cutadapt SP5 | ~20 min | Fast demultiplexing |
 | Cutadapt SP27 | ~20-30 min | Per-adapter loop |
-| Amplicon Sorter | ~20-30 min | CPU intensive, use 6 threads |
+| Amplicon Sorter | ~10-20 min | *see below |
 | Primer Removal | ~5-10 min | Fast with cutadapt |
 | Pybarrnap | ~10-15 min | covariance model search for rRNAs |
 | COI reorganisation | ~1-5 min | just moving files |
 | **Total** | **~2 hours** | Per sample |
+
+* After demultiplexing, you will have MANY samples to run! 
+* While the amplicon_sorter rule runs reasonably fast, it has a lot to get through.
+* So, bear with!
+* If you ran a 96-well plate of samples as we did, this will take anywhere between 16h to 23h (960 min - 1920 min)
 
 ## Memory Considerations
 
