@@ -436,9 +436,9 @@ rule amplicon_sorter:
             exit 0
         fi
 
-                awk -v combo="{wildcards.combo}" \
-                    -v dataset="{DATASET_NAME}" \
-                '
+        awk -v combo="{wildcards.combo}" \
+            -v dataset="{DATASET_NAME}" \
+            '
         BEGIN {{
             dataset_label = dataset
             sub(/^[^_]+_/, "", dataset_label)
@@ -456,12 +456,10 @@ rule amplicon_sorter:
             }}
         }}
         {{ print }}
-          "$outdir/consensusfile.fasta" \
-            > "$outdir/classified.fasta"
+                ' "$outdir/consensusfile.fasta" \
+                        > "{output.consensus}"
 
         rm -f "$outdir/consensusfile.fasta"
-
-        cp "$outdir/classified.fasta" "{output.consensus}"
         """
 # ----------------------------------------
 # 4: Primer removal
