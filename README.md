@@ -127,10 +127,14 @@ pychopper_q_score: 10
 min_amplicon_size: null              # Leave null for no filtering
 max_amplicon_size: null
 
-# Amplicon types to process
+# Amplicon types to process, each with its own size filter.
 amplicon_types:
-  - "rRNAs"
-  - "COIs"
+  rRNAs:
+    min_size: <int>                    # Minimum rRNA length
+    max_size: <int>                    # Maximum rRNA length
+  COIs:
+    min_size: <int>                     # Minimum COI length
+    max_size: <int>                     # Maximum COI length
 ```
 
 #### Dataset-Specific Configs
@@ -216,11 +220,10 @@ Estimated runtime for ~1M reads in the raw dataset:
 | Pychopper | ~60 min | I/O bound, ~4 threads |
 | Cutadapt SP5 | ~20 min | Fast demultiplexing |
 | Cutadapt SP27 | ~20-30 min | Per-adapter loop |
-| Amplicon Sorter | ~10-20 min | *see below |
+| Amplicon Sorter | ~10-20 min per sample | *see below |
 | Primer Removal | ~5-10 min | Fast with cutadapt |
 | Pybarrnap | ~10-15 min | covariance model search for rRNAs |
 | COI reorganisation | ~1-5 min | just moving files |
-| **Total** | **~2 hours** | Per sample |
 
 * After demultiplexing, you will have MANY samples to run! 
 * While the amplicon_sorter rule runs reasonably fast, it has a lot to get through.
@@ -329,7 +332,7 @@ snakemake -c 4 --rerun-incomplete
 ## Notes
 
 - **Adapter sequences** must match your exact wet-lab protocol. Check `adapters_primers/` files.
-- **Primer sequences** in config should be 5'→3' orientation. Use `seqkit seq -r` to reverse-complement if needed.
+- **Primer sequences** in config should be 5'→3' orientation. Use `seqkit seq -r` to reverse-complement if needed before using.
 - **Size filters** (min/max amplicon size) are optional but recommended for specificity.
 - **Multiple dataset runs** can be done in separate directories using different configs.
 - The workflow is **idempotent**: re-running with `--rerun-incomplete` will skip completed steps.
