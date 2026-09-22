@@ -40,13 +40,21 @@ A Snakemake-based workflow for processing COI/28S/18S amplicon data locally!
    conda activate snakemake-orca
    ```
 
-3. **Copy workflow files into the repo root:**
-   - Copy `Snakefile` to repo root
-   - Copy `config.yaml` to repo root
-   - Copy `configs/` directory to repo root
-   - Create `envs/` directory and copy all `envs/*.yaml` files
+3. **Download amplicon_sorter.py (if not present):**
+   ```bash
+   curl -o scripts/auxiliary_code/amplicon_sorter.py \
+     https://raw.githubusercontent.com/avierstr/amplicon_sorter/master/amplicon_sorter.py
+   chmod +x scripts/auxiliary_code/amplicon_sorter.py
+   ```
 
-   Your directory structure should look like:
+**AN IMPORTANT NOTE**
+If you're using MacOS, as I am, then you'll need to add this line below line 18 of the `amplicon_sorter.py` code
+```
+multiprocessing.set_start_method("fork", force=True)
+```
+Since MacOS `spawns` threads by default, and this is the workaround I have found. 
+
+**Your directory structure should look like:**
    ```
    OrCA-seq-processing/
    ├── Snakefile
@@ -62,87 +70,22 @@ A Snakemake-based workflow for processing COI/28S/18S amplicon data locally!
    ├── adapters_primers/
    ├── scripts/
    │   ├── auxiliary_code/
-   │   │   └── amplicon_sorter.py  (download if not present)
+   │   │   └── amplicon_sorter.py
    │   └── ...
    └── input_reads/        # Your FASTQ files here
    ```
 
-4. **Download amplicon_sorter.py (if not present):**
-   ```bash
-   curl -o scripts/auxiliary_code/amplicon_sorter.py \
-     https://raw.githubusercontent.com/avierstr/amplicon_sorter/master/amplicon_sorter.py
-   chmod +x scripts/auxiliary_code/amplicon_sorter.py
-   ```
-
 ## Usage
 
-### Basic Workflow Execution
-
-1. **Prepare input files:**
-   - Place FASTQ files (`.fastq.gz`, `.fastq`, `.fq.gz`, or `.fq`) in the `input_reads/` directory
-
-2. **Run the workflow with default config:**
-   ```bash
-   snakemake -s OrCAseq_processing.smk -c 4 --use-conda --rerun-incomplete
-   ```
-   
-   Options:
-   - `-c 4`: Use 4 cores (adjust for your system; M3 can handle 4-8)
-   - `--use-conda`: Automatically create/activate conda environments
-   - `--rerun-incomplete`: Re-run jobs if they fail partway through
-
-3. **Run with a specific dataset config:**
-   ```bash
-   snakemake -s OrCAseq_processing.smk -c 4 --use-conda --configfile configs/dataset_coi.yaml
-   ```
-
-4. **Dry-run (preview what will execute):**
-   ```bash
-   snakemake -s OrCAseq_processing.smk -n --configfile configs/config_Lakesday1.yaml # or other dataset)
-   ```
-
-5. **Generate a workflow visualization:**
-   ```bash
-   snakemake -s OrCAseq_processing.smk --dag | dot -Tpng > workflow.png
-   ```
-
 ### Configuration Files
-
-#### Main config.yaml
-
-Default settings for the workflow. Modify this for baseline parameters:
-
-```yaml
-dataset_name: "my_dataset"          # Dataset identifier
-raw_reads: "input_reads"             # FASTQ input directory
-work_dir: "results"                  # Output base directory
-
-# Thread allocation (MacBook M3 has 8 cores; use 4 per task)
-pychopper_threads: 4
-cutadapt_threads: 4
-amplicon_sorter_threads: 4
-
-# Quality and size filters
-pychopper_q_score: 10
-min_amplicon_size: null              # Leave null for no filtering
-max_amplicon_size: null
-
-# Amplicon types to process, each with its own size filter.
-amplicon_types:
-  rRNAs:
-    min_size: <int>                    # Minimum rRNA length
-    max_size: <int>                    # Maximum rRNA length
-  COIs:
-    min_size: <int>                     # Minimum COI length
-    max_size: <int>                     # Maximum COI length
-```
-
-#### Dataset-Specific Configs
-
-**Create custom config for your dataset:**
+You will need a configuration file (`config.yaml`) in order to run the workflow.
+This is so it knows:
+   - What the dataset is and where it is
+   - What dataset name to give
+   - The adapters, configuration files and primers for demultiplexing and cleaning
+   - Which size thresholds to cluster reads by
 
 In this study the dataset configs are in configs/ 
-The below is a template
 
 ```yaml
 # configs/config_mydataset.yaml
@@ -169,21 +112,39 @@ amplicon_types:
     max_size: <int>                       # Maximum COI length
 ```
 
-Then run:
-```bash
-snakemake -c 4 --use-conda --configfile configs/config_mydataset.yaml
-```
+### Basic Workflow Execution
 
-## Output Structure
+1. **Prepare input files:**
+   - Place FASTQ files (`.fastq.gz`) in the `input_reads/` directory
+
+2. **Generate a workflow visualization:**
+   ```bash
+   snakemake -s OrCAseq_processing.smk --dag | dot -Tpng > workflow.png
+   ```
+
+3. **Dry-run the workflow with default config:**
+   ```bash
+   snakemake -s OrCAseq_processing.smk -c 4 --use-conda --configfile configs/config_Lakesday1.yaml --dry-run
+   ```
+
+4. **Run the protocol if the summary looks right**
+   ```bash
+   snakemake -s OrCAseq_processing.smk -c 4 --use-conda --configfile configs/config_Lakesday1.yaml
+   ```
+   
+- **Options:**
+   - `-c 4`: Use 4 cores (adjust for your system; M3 can handle 4-8)
+   - `--use-conda`: Automatically create/activate conda environments.
+      - If you want to install tools in your PATH, then you can. See [Advanced Usage](#advanced-usage)
+   - `--rerun-incomplete`: Re-run jobs if they fail partway through
+
+
+## Output Structure (summary)
 
 ```
 results/
 ├── pychopped/
-│   ├── {sample}_pass.fastq.gz
-│   ├── {sample}_rescued.fastq
-│   ├── {sample}_unclass.fastq
-│   ├── {sample}_short.fastq
-│   └── {sample}_stats.out
+│   └── {sample}_pass.fastq.gz
 ├── demuxed/
 │   ├── SP5/{sample}/{SP5_id}_{DATASET_NAME}.fastq.gz
 │   └── SP27/{sample}/{combo}_{DATASET_NAME}.fastq.gz      # combo = SP27_xxx_SP5_yyy
@@ -243,65 +204,14 @@ If it's too slow:
 - Increase thread counts (`-c 6`) or if your laptop is more powerful, up threads more
 - NOTE: don't bother upping threads for pychopper, since it's I/O bound. An informal test with 8 threads made it very slow.
 
-## Troubleshooting
-
-### "Command not found: pychopper"
-
-Pychopper sometimes can have versioning issues. The combination of pychopper v2.7.10 with dependency on python v3.10.17 works. 
-
-The conda environment wasn't activated. Snakemake should handle this with `--use-conda`.
-```bash
-conda activate snakemake-orca
-snakemake -c 4 --use-conda
-```
-
-### "File not found in demuxed/"
-
-This means cutadapt demultiplexing produced no output, likely due to:
-- Wrong adapter sequences in `config.yaml`. Make sure to check sequence orientation!
-- Incorrect `M13_config_for_pychopper.txt` orientation (meaning the downstream adapter seqs will be off too)
-- Quality issues in pychopped output (check nanoplot, which you may run manually)
-
-Check logs:
-```bash
-cat results/logs/cutadapt_sp5_sample1.log
-```
-
-### "No fastq.gz files found in input_reads/"
-
-Ensure:
-1. Folder exists: `mkdir -p input_reads`
-2. Files are there: `ls input_reads/*.fastq.gz`
-3. Filenames have the correct extension (`.fastq.gz` for this analysis; later I might allow for other variations)
-
-### Amplicon Sorter complains about consensus file
-
-Likely causes:
-- Wrong cluster thresholds
-- Too few reads in a demux bin
-- Check: `results/amplicon_sorted/*/*/results.txt`
-
-### "FASTA index found" error from pybarrnap
-
-Remove stale `.fai` files:
-```bash
-find results/ -name "*.fai" -delete
-snakemake -c 4 --use-conda --rerun-incomplete
-```
-
 ## Advanced Usage
 
 ### Run only specific rules
 
 ```bash
-# Only pychopper
-snakemake pychopper -c 4 --use-conda
+# Only certain rules
+snakemake {rule_name} -c 4 --use-conda
 
-# Only primer removal
-snakemake primer_removal -c 4 --use-conda
-
-# Only final COI output
-snakemake reorganize_cois -c 4 --use-conda
 ```
 
 ### Force re-run of failed steps
@@ -310,7 +220,7 @@ snakemake reorganize_cois -c 4 --use-conda
 snakemake -c 4 --use-conda --rerun-incomplete --rerun-all
 ```
 
-### Generate reports
+### Generate reports (fun)
 
 ```bash
 snakemake --report report.html --use-conda
@@ -337,7 +247,7 @@ snakemake -c 4 --rerun-incomplete
 - **Multiple dataset runs** can be done in separate directories using different configs.
 - The workflow is **idempotent**: re-running with `--rerun-incomplete` will skip completed steps.
 
-## Contact & Citation
+## Citation
 
 This Snakemake workflow wraps the bash scripts from the main branch of:
 https://github.com/srisarya/OrCA-seq-processing
