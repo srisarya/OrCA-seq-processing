@@ -60,8 +60,7 @@ Since MacOS `spawns` threads by default, and this is the workaround I have found
    ├── Snakefile
    ├── config.yaml
    ├── configs/
-   │   ├── dataset_coi.yaml
-   │   └── dataset_rrna.yaml
+   │   └── config_for_dataset.yaml
    ├── envs/
    │   ├── pychopper.yaml
    │   ├── cutadapt.yaml
