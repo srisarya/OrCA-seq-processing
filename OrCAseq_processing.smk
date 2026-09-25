@@ -169,15 +169,15 @@ COMBOS = [
     for sp5 in SP5_IDENTIFIERS
 ]
 SP5_FASTQ_OUTPUTS = [
-    f"{WORK_DIR}/demuxed/SP5/{{{{sample}}}}/{identifier}_{DATASET_NAME}.fastq.gz"
+    f"{WORK_DIR}/demuxed/SP5/{{sample}}/{identifier}_{DATASET_NAME}.fastq.gz"
     for identifier in SP5_IDENTIFIERS
 ]
 SP27_FASTQ_OUTPUTS = [
-    f"{WORK_DIR}/demuxed/SP27/{{{{sample}}}}/{combo}_{DATASET_NAME}.fastq.gz"
+    f"{WORK_DIR}/demuxed/SP27/{{sample}}/{combo}_{DATASET_NAME}.fastq.gz"
     for combo in COMBOS
 ]
 SP27_REPORT_OUTPUTS = [
-    f"{WORK_DIR}/demuxed/SP27/{{{{sample}}}}/{identifier}_{DATASET_NAME}.json"
+    f"{WORK_DIR}/demuxed/SP27/{{sample}}/{identifier}_{DATASET_NAME}.json"
     for identifier in SP5_IDENTIFIERS
 ]
 
