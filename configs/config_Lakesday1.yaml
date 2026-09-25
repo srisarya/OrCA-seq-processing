@@ -6,7 +6,7 @@ dataset_name: "Lakes_day1"
 
 # Input/Output directories
 raw_reads: "input_reads" # Directory containing input FASTQ files
-work_dir: "results" # All outputs go here
+work_dir: "results_new" # All outputs go here
 
 # Adapter and primer file paths (relative to repo root)
 m13_seqs: "adapters_primers/M13_seqs_for_pychopper.fa"
@@ -22,9 +22,8 @@ primers:
 
 # Processing parameters
 pychopper_q_score: 10 # Quality score threshold for pychopper
-pychopper_threads: 4 # pychopper threads (M3 has 8 cores)
-cutadapt_threads: 4 # cutadapt threads
-amplicon_sorter_threads: 6 # amplicon_sorter threads
+pychopper_threads: 2 # cutadapt threads
+amplicon_sorter_threads: 2 # amplicon_sorter threads
 primer_removal_threads: 1 # primer removal threads
 barrnap_threads: 1 # barrnap threads
 
