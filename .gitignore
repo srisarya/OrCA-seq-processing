@@ -334,7 +334,6 @@ FodyWeavers.xsd
 *.msix
 *.msm
 *.msp
-.Rproj.user
 # plot figures and knitted html
 scripts/R_analysis/*html
 scripts/R_analysis/plots/*pdf
