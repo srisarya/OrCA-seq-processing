@@ -86,30 +86,6 @@ This is so it knows:
 
 In this study the dataset configs are in configs/ 
 
-```yaml
-# configs/config_mydataset.yaml
-dataset_name: "my_dataset"
-raw_reads: "input_reads/my_dataset"
-
-# Adapter and primer file paths (relative to repo root)
-m13_seqs: "adapters_primers/my_adapters_sequences.fa" # needed for pychopper
-m13_config: "adapters_primers/my_adapters_config.txt" # needed for pychopper
-fwd_adapters: "adapters_primers/forward_adapters.fa" # needed for demux
-rvs_adapters: "adapters_primers/reverse_adapters_reverse_complemented.fa" # needed for demux
-
-# Your specific primers/adapters (relative to repo root)
-r1_primers: "adapters_primers/my_primers.fa"
-r2_primers: null
-
-# Amplicon types to process, each with its own size filter.
-amplicon_types:
-  amplicon1:
-    min_size: <int>                    # Minimum rRNA length
-    max_size: <int>                      # Maximum rRNA length
-  amplicon2:
-    min_size: <int>                       # Minimum COI length
-    max_size: <int>                       # Maximum COI length
-```
 
 ### Basic Workflow Execution
 
@@ -187,8 +163,7 @@ Estimated runtime for ~1M reads in the raw dataset:
 
 * After demultiplexing, you will have MANY samples to run! 
 * While the amplicon_sorter rule runs reasonably fast, it has a lot to get through.
-* So, bear with!
-* If you ran a 96-well plate of samples as we did, this will take anywhere between 16h to 23h (960 min - 1920 min)
+* So, bear with!s
 
 ## Memory Considerations
 
