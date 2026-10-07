@@ -353,3 +353,5 @@ scripts/auxiliary_code/amplicon_sorter.py
 .snakemake
 results/
 pychopper.pdf
+report.html
+runtimes.json
