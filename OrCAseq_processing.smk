@@ -79,6 +79,13 @@ AS_THREADS = config.get("amplicon_sorter_threads", PARAM_DEFAULTS["amplicon_sort
 PRIMER_REMOVAL_THREADS = config.get("primer_removal_threads", PARAM_DEFAULTS["primer_removal_threads"])
 BARRNAP_THREADS = config.get("barrnap_threads", PARAM_DEFAULTS["barrnap_threads"])  
 
+_mac_cfg = config.get("mac", False)
+if isinstance(_mac_cfg, str):
+    # tolerate quoted values such as "true" / "false" / "yes"
+    _mac_cfg = _mac_cfg.strip().lower() in ("true", "yes", "1")
+MAC = bool(_mac_cfg)
+
+
 INVALID_SP27 = config.get("invalid_sp27") or []
 if isinstance(INVALID_SP27, str):
     INVALID_SP27 = [INVALID_SP27]
@@ -486,7 +493,8 @@ rule amplicon_sorter:
             f"-max {AMPLICON_SIZE_LIMITS[wc.amplicon_type]['max_size']}"
             if AMPLICON_SIZE_LIMITS[wc.amplicon_type]["max_size"] is not None
             else ""
-        )
+        ),
+        mac_flag="-mac" if MAC else ""
     output:
         consensus=(
             f"{WORK_DIR}/amplicon_sorted/"
@@ -515,6 +523,7 @@ rule amplicon_sorter:
             -i "{input.fastq}"
             -o "$outdir"
             -ar
+            {params.mac_flag}
             -np {threads}
             {params.min_flag}
             {params.max_flag}
