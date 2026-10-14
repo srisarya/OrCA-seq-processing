@@ -147,14 +147,14 @@ results/
 Estimated runtime for ~2.6M reads in the raw dataset (Lakes Day 1 data, 4.4G, from the NHM training workshop in Ambleside)
 
 | Step | Mean compute time across all jobs | Sum compute time for all jobs | Notes |
-|------|------|-------|
+| --- | --- | --- | --- |
 | Pychopper | ~30 min | ~30 min | I/O bound, ~4 threads |
 | Cutadapt SP5 | ~10 min | ~10 min | Fast demultiplexing |
 | Cutadapt SP27 | ~5 min | ~5 min | Per-adapter loop |
-| Amplicon Sorter | ~20 min | ~72h | *see below |
-| Primer Removal | ~1 second| ~4 min | We use the round 1 trimming onl
-| Pybarrnap | ~1 second | ~3 min | covariance model search for rRNAs |
-| COI reorganisation | milliseconds | ~2 seconds | just moving files |
+| Amplicon Sorter | ~20 min | ~72 h | See below |
+| Primer Removal | ~1 second | ~4 min | We use the round 1 trimming only |
+| Pybarrnap | ~1 second | ~3 min | Covariance model search for rRNAs |
+| COI reorganisation | milliseconds | ~2 seconds | Just moving files |
 
 * After demultiplexing, you will have MANY samples to run! 
 * While the amplicon_sorter rule runs reasonably fast, it has a lot to get through.
