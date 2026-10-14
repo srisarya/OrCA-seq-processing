@@ -47,13 +47,6 @@ A Snakemake-based workflow for processing COI/28S/18S amplicon data locally!
    chmod +x scripts/auxiliary_code/amplicon_sorter.py
    ```
 
-**AN IMPORTANT NOTE**
-If you're using MacOS, as I am, then you'll need to add this line below line 18 of the `amplicon_sorter.py` code
-```
-multiprocessing.set_start_method("fork", force=True)
-```
-Since MacOS `spawns` threads by default, and this is the workaround I have found. 
-
 **Your directory structure should look like:**
    ```
    OrCA-seq-processing/
@@ -81,30 +74,26 @@ You will need a configuration file (`config.yaml`) in order to run the workflow.
 This is so it knows:
    - What the dataset is and where it is
    - What dataset name to give
+   - Whether you're using macOS or PC/windows
    - The adapters, configuration files and primers for demultiplexing and cleaning
    - Which size thresholds to cluster reads by
+   - Which resources to provide (CPUs/threads)
 
 In this study the dataset configs are in configs/ 
-
 
 ### Basic Workflow Execution
 
 1. **Prepare input files:**
    - Place FASTQ files (`.fastq.gz`) in the `input_reads/` directory
 
-2. **Generate a workflow visualization:**
+2. **Dry-run the workflow with default config:**
    ```bash
-   snakemake -s OrCAseq_processing.smk --dag | dot -Tpng > workflow.png
+   snakemake -s OrCAseq_processing.smk --use-conda --configfile configs/config_Lakesday1.yaml --dry-run
    ```
 
-3. **Dry-run the workflow with default config:**
+3. **Run the protocol with 6 threads if the summary looks right**
    ```bash
-   snakemake -s OrCAseq_processing.smk -c 4 --use-conda --configfile configs/config_Lakesday1.yaml --dry-run
-   ```
-
-4. **Run the protocol if the summary looks right**
-   ```bash
-   snakemake -s OrCAseq_processing.smk -c 4 --use-conda --configfile configs/config_Lakesday1.yaml
+   snakemake -s OrCAseq_processing.smk -c 6 --use-conda --configfile configs/config_Lakesday1.yaml
    ```
    
 - **Options:**
@@ -112,6 +101,7 @@ In this study the dataset configs are in configs/
    - `--use-conda`: Automatically create/activate conda environments.
       - If you want to install tools in your PATH, then you can. See [Advanced Usage](#advanced-usage)
    - `--rerun-incomplete`: Re-run jobs if they fail partway through
+   - once the workflow has completed, you can run it like so `snakemake -s OrCAseq_processing.smk --configfile configs/config_Lakesday1.yaml --report` to get a HTML report of runtimes and timestamps :)
 
 
 ## Output Structure (summary)
@@ -138,6 +128,8 @@ results/
 ├── COI_gene/
 │   └── {sample}/
 │       └── {combo}_COI.fasta
+├── failures/
+    └── failures.tsv
 └── logs/
     ├── pychopper_{sample}.log
     ├── cutadapt_sp5_{sample}.log
@@ -146,36 +138,41 @@ results/
     ├── primer_removal_{sample}_{combo}_{amplicon_type}.log
     └── pybarrnap_{sample}_{combo}.log
 ```
+- `failures.tsv` is a tab-separated file of the stages and amplicons yielding no results OR failing
+   - it's good to look at this as the workflow runs to check if something is wrong
+- logs are per rule and also explain issues
 
 ## Performance on MacBook Pro M3
 
-Estimated runtime for ~1M reads in the raw dataset:
+Estimated runtime for ~2.6M reads in the raw dataset (Lakes Day 1 data, 4.4G, from the NHM training workshop in Ambleside)
 
-| Step | Time | Notes |
+| Step | Mean compute time across all jobs | Sum compute time for all jobs | Notes |
 |------|------|-------|
-| Pychopper | ~60 min | I/O bound, ~4 threads |
-| Cutadapt SP5 | ~20 min | Fast demultiplexing |
-| Cutadapt SP27 | ~20-30 min | Per-adapter loop |
-| Amplicon Sorter | ~10-20 min per sample | *see below |
-| Primer Removal | ~5-10 min | Fast with cutadapt |
-| Pybarrnap | ~10-15 min | covariance model search for rRNAs |
-| COI reorganisation | ~1-5 min | just moving files |
+| Pychopper | ~30 min | ~30 min | I/O bound, ~4 threads |
+| Cutadapt SP5 | ~10 min | ~10 min | Fast demultiplexing |
+| Cutadapt SP27 | ~5 min | ~5 min | Per-adapter loop |
+| Amplicon Sorter | ~20 min | ~72h | *see below |
+| Primer Removal | ~1 second| ~4 min | We use the round 1 trimming onl
+| Pybarrnap | ~1 second | ~3 min | covariance model search for rRNAs |
+| COI reorganisation | milliseconds | ~2 seconds | just moving files |
 
 * After demultiplexing, you will have MANY samples to run! 
 * While the amplicon_sorter rule runs reasonably fast, it has a lot to get through.
-* So, bear with!s
+* With multithreading, it does not take the whole 72h!!!!
+* I ran this with 6 cores and 2 cores per job, so it took 72/3=24h to finish amplicon sorting
+* Total run time was 1 day, 56 minutes, 8.21 seconds
 
 ## Memory Considerations
 
 The MacBook Pro M3 with 16GB RAM is sufficient for:
 - Single samples use ~2-4GB peak memory
-- Recommend running with `-c 4` per job to avoid OOM
+- Recommend running with `-c 6` per job to avoid OOM
 
 If memory is an issue:
 - Reduce thread counts (`-c 2`)
 
 If it's too slow:
-- Increase thread counts (`-c 6`) or if your laptop is more powerful, up threads more
+- Increase thread counts if your laptop is more powerful and can handle it
 - NOTE: don't bother upping threads for pychopper, since it's I/O bound. An informal test with 8 threads made it very slow.
 
 ## Advanced Usage
@@ -184,14 +181,14 @@ If it's too slow:
 
 ```bash
 # Only certain rules
-snakemake {rule_name} -c 4 --use-conda
+snakemake {rule_name} -c 6 --use-conda
 
 ```
 
 ### Force re-run of failed steps
 
 ```bash
-snakemake -c 4 --use-conda --rerun-incomplete --rerun-all
+snakemake -c 6 --use-conda --rerun-incomplete --rerun-all
 ```
 
 ### Generate reports (fun)
