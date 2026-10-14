@@ -1,0 +1,96 @@
+---
+title: "Phylogenetic Anchor Filtering"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+    theme: flatly
+    highlight: tango
+    df_print: paged
+---
+```{r setup}
+library(tidyverse)
+library(jsonlite)
+library(ggplot2)
+options(scipen = 999)
+```
+
+```{r}
+smk_job_runtimes <-fromJSON("../../runtimes.json") %>% 
+  as.data.frame %>% 
+  dplyr::select(data.values.rule, data.values.runtime) %>% 
+  dplyr::rename("Job" = "data.values.rule", 
+                "Time" = "data.values.runtime") %>% 
+  dplyr::mutate(Job = factor(Job, levels = c("pychopper",
+                                                "cutadapt_sp5",
+                                                "cutadapt_sp27",
+                                                "amplicon_sorter",
+                                                "primer_removal",
+                                                "barrnap_extract",
+                                                "reorganize_cois")))
+
+average_times <-
+  smk_job_runtimes %>% 
+  group_by(Job) %>% 
+  summarize(mean_seconds = mean(Time),
+            sum_seconds = sum(Time)) %>% 
+  mutate(mean_minutes = mean_seconds/60,
+         mean_hours = mean_minutes/60,
+         sum_minutes = sum_seconds/60,
+         sum_hours = sum_minutes/60)
+  
+
+smk_job_runtimes %>% 
+  ggplot(aes(x = Job, y= Time, color = Job)) +
+  geom_jitter()+
+  scale_y_log10(
+    breaks = axis_breaks,
+    labels = axis_labels)+
+  scale_color_viridis_d()+
+  labs(x = "Job",
+       y = "Time (seconds), scaled log10")+
+  theme_minimal(base_size = 12)+
+  theme(axis.text.x = element_text(angle = 45, hjust = 1),
+        legend.position = "none")
+
+
+smk_job_runtimes %>% 
+  ggplot(aes(x = Job, y= Time/60, color = Job)) +
+  geom_jitter()+
+  scale_color_viridis_d()+
+  labs(x = "Job",
+       y = "Time (minutes)")+
+  theme_minimal(base_size = 12)+
+  theme(axis.text.x = element_text(angle = 45, hjust = 1),
+        legend.position = "none")
+```
+```{r}
+cumulative <- smk_job_runtimes %>%
+  group_by(Job) %>%
+  summarise(Job_Total = sum(Time), .groups = "drop") %>%
+  arrange(Job) %>%
+  mutate(cumulative_time = cumsum(Job_Total))
+
+axis_breaks <- 10^(-1:5)
+axis_labels <- scales::label_number(big.mark = ",", drop0trailing = TRUE)
+
+smk_job_runtimes %>%
+  ggplot(aes(x = Job, y = Time, color = Job)) +
+  geom_jitter() +
+  geom_line(data = cumulative,
+            aes(x = Job, y = cumulative_time, group = 1),
+            inherit.aes = FALSE, linewidth = 0.5) +
+  scale_y_log10(
+    breaks = axis_breaks,
+    labels = axis_labels,
+    sec.axis = dup_axis(name = "Cumulative time (seconds)\nscaled log10, for all Jobs")
+  ) +
+  scale_color_viridis_d() +
+  labs(x = "Job",
+       y = "Time (seconds)\nscaled log10 per Job") +
+  theme_minimal(base_size = 12) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1), 
+        legend.position = "none")
+```
+

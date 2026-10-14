@@ -1,0 +1,50 @@
+"0","all_BLAST_barcodes_taxonomy_lca <- all_BLAST_barcodes %>%
+  group_by(qseqid) %>%
+  mutate(lca = {
+    agreed <- sapply(tax_cols_present, 
+                     function(col) {
+      vals <- unique(na.omit(get(col)))
+      if (length(vals) == 1)
+        vals
+      else
+        NA_character_
+    })
+    lca <- tail(agreed[!is.na(agreed)], 1)
+    if (length(lca) == 0)
+      NA_character_
+    else
+      as.character(lca)
+  }) %>%
+  ungroup() %>%
+  rowwise() %>%
+  mutate(matching_rank = {
+    tax_values <- c(domain, 
+                    phylum, 
+                    class, 
+                    order, 
+                    family, 
+                    genus, 
+                    species)
+    rank_names <- c(""domain"",
+                    ""phylum"",
+                    ""class"",
+                    ""order"",
+                    ""family"",
+                    ""genus"",
+                    ""species"")
+    match_idx <- which(!is.na(tax_values) & 
+                         tax_values == lca)
+    if (length(match_idx) > 0)
+      rank_names[match_idx[1]]
+    else
+      NA_character_
+  }) #%>%
+"
+"1","[1m[33mError[39m in `mutate()`:[22m
+[38;5;232m[36mℹ[38;5;232m In argument: `lca = { ... }`.
+[36mℹ[38;5;232m In group 1: `qseqid =
+  ""18S_rRNA::consensus_SP27_001_SP5_001_Garden1_pass_group21_readcount_172:0-1748(+)""`.[39m
+[1mCaused by error in `h()`:[22m
+[33m![39m error in evaluating the argument 'x' in selecting a method for function 'unique': error in evaluating the argument 'object' in selecting a method for function 'na.omit': object 'domain' not found
+[90mRun `]8;;x-r-run:rlang::last_trace()rlang::last_trace()]8;;` to see where the error occurred.[39m
+"

@@ -1,0 +1,194 @@
+"0","library(tidyverse)"
+"2","Warning: package ‘ggplot2’ was built under R version 4.4.3"
+"2","Warning: package ‘tibble’ was built under R version 4.4.3"
+"2","Warning: package ‘tidyr’ was built under R version 4.4.3"
+"2","Warning: package ‘readr’ was built under R version 4.4.3"
+"2","Warning: package ‘purrr’ was built under R version 4.4.3"
+"2","Warning: package ‘dplyr’ was built under R version 4.4.3"
+"2","Warning: package ‘lubridate’ was built under R version 4.4.3"
+"2","── [1mAttaching core tidyverse packages[22m ──────────────────────────────────────────── tidyverse 2.0.0 ──
+[32m✔[39m [34mdplyr    [39m 1.2.0     [32m✔[39m [34mreadr    [39m 2.1.6
+[32m✔[39m [34mforcats  [39m 1.0.1     [32m✔[39m [34mstringr  [39m 1.6.0
+[32m✔[39m [34mggplot2  [39m 4.0.2     [32m✔[39m [34mtibble   [39m 3.3.1
+[32m✔[39m [34mlubridate[39m 1.9.5     [32m✔[39m [34mtidyr    [39m 1.3.2
+[32m✔[39m [34mpurrr    [39m 1.2.1     "
+"2","── [1mConflicts[22m ────────────────────────────────────────────────────────────── tidyverse_conflicts() ──
+[31m✖[39m [34mdplyr[39m::[32mfilter()[39m masks [34mstats[39m::filter()
+[31m✖[39m [34mdplyr[39m::[32mlag()[39m    masks [34mstats[39m::lag()
+[36mℹ[39m Use the ]8;;http://conflicted.r-lib.org/conflicted package]8;; to force all conflicts to become errors"
+"0","library(tidytext)"
+"0","library(forcats)"
+"0","library(Biostrings)"
+"2","Loading required package: BiocGenerics
+"
+"2","
+Attaching package: ‘BiocGenerics’
+
+"
+"2","The following objects are masked from ‘package:lubridate’:
+
+    intersect, setdiff, union
+
+"
+"2","The following objects are masked from ‘package:dplyr’:
+
+    combine, intersect, setdiff, union
+
+"
+"2","The following objects are masked from ‘package:stats’:
+
+    IQR, mad, sd, var, xtabs
+
+"
+"2","The following objects are masked from ‘package:base’:
+
+    anyDuplicated, aperm, append, as.data.frame, basename, cbind, colnames, dirname,
+    do.call, duplicated, eval, evalq, Filter, Find, get, grep, grepl, intersect,
+    is.unsorted, lapply, Map, mapply, match, mget, order, paste, pmax, pmax.int, pmin,
+    pmin.int, Position, rank, rbind, Reduce, rownames, sapply, saveRDS, setdiff, table,
+    tapply, union, unique, unsplit, which.max, which.min
+
+"
+"2","Loading required package: S4Vectors
+"
+"2","Loading required package: stats4
+"
+"2","
+Attaching package: ‘S4Vectors’
+
+"
+"2","The following objects are masked from ‘package:lubridate’:
+
+    second, second<-
+
+"
+"2","The following objects are masked from ‘package:dplyr’:
+
+    first, rename
+
+"
+"2","The following object is masked from ‘package:tidyr’:
+
+    expand
+
+"
+"2","The following object is masked from ‘package:utils’:
+
+    findMatches
+
+"
+"2","The following objects are masked from ‘package:base’:
+
+    expand.grid, I, unname
+
+"
+"2","Loading required package: IRanges
+"
+"2","
+Attaching package: ‘IRanges’
+
+"
+"2","The following object is masked from ‘package:lubridate’:
+
+    %within%
+
+"
+"2","The following objects are masked from ‘package:dplyr’:
+
+    collapse, desc, slice
+
+"
+"2","The following object is masked from ‘package:purrr’:
+
+    reduce
+
+"
+"2","Loading required package: XVector
+"
+"2","
+Attaching package: ‘XVector’
+
+"
+"2","The following object is masked from ‘package:purrr’:
+
+    compact
+
+"
+"2","Loading required package: GenomeInfoDb
+"
+"2","
+Attaching package: ‘Biostrings’
+
+"
+"2","The following object is masked from ‘package:base’:
+
+    strsplit
+
+"
+"0","library(taxonomizr)"
+"2","Registered S3 method overwritten by 'data.table':
+  method           from
+  print.data.table     
+"
+"0","library(ggplot2)"
+"0","library(ggalluvial)"
+"0","library(kableExtra)"
+"2","
+Attaching package: ‘kableExtra’
+
+"
+"2","The following object is masked from ‘package:dplyr’:
+
+    group_rows
+
+"
+"0","library(paletteer)"
+"2","Warning: package ‘paletteer’ was built under R version 4.4.3"
+"0","library(patchwork)"
+"0",""
+"0","knitr::opts_chunk$set(echo = TRUE)"
+"0","options(scipen = 999)"
+"0",""
+"0","# colour palettes for all further analyses"
+"0","chosen_level_colours <- c("
+"0","  ""Acari""           = ""#E6A817"","
+"0","  # warm amber"
+"0","  ""Annelida""        = ""#7B2D8B"","
+"0","  # deep purple"
+"0","  ""Copepoda""        = ""#2DB34A"","
+"0","  # vivid green"
+"0","  ""Insecta""         = ""#D4E84A"","
+"0","  # yellow-green"
+"0","  ""Nematoda""        = ""#E8334A"","
+"0","  # strong red"
+"0","  ""Platyhelminthes"" = ""#3A7A5C"","
+"0","  # teal-green"
+"0","  ""Rotifera""        = ""#FF6EC7"","
+"0","  # hot pink"
+"0","  ""Tardigrada""      = ""#4A90D9"","
+"0","  # clear sky blue"
+"0","  ""Gastrotricha""    = ""#00C9A7"","
+"0","  # bright teal"
+"0","  ""Ciliophora""      = ""#FFEC8B"","
+"0","  # light goldenrod"
+"0","  ""Cladocera""       = ""#FF8C00"","
+"0","  # dark orange"
+"0","  ""Ostracoda""       = ""#8B1A1A"","
+"0","  # deep brick red"
+"0","  ""Mollusca""        = ""#5B4FCF"","
+"0","  # indigo"
+"0","  ""NA""              = ""#D6D6D6"","
+"0","  # light grey"
+"0","  ""off-target""      = ""#D6D6D6"","
+"0","  # light greyl"
+"0","  ""Other""      = ""#D6D6D6"","
+"0","  # light grey"
+"0","  ""Other Protista""  = ""#C4956A""   # warm tan"
+"0",")"
+"0",""
+"0",""
+"0","barcode_colours <- c(""maroon4"","
+"0","                     ""steelblue4"","
+"0","                     ""lightskyblue"","
+"0","                     ""olivedrab1"","
+"0","                     ""darkolivegreen"")"

@@ -1,0 +1,19 @@
+"0","all_BLAST_barcodes_taxonomy_lca %>% 
+  distinct(qseqid, .keep_all = TRUE) %>% 
+  group_by(primer_barcode) %>% 
+  summarise(
+    Min       = min(readcount),
+    Q1        = quantile(readcount, 0.25),
+    Median    = median(readcount),
+    Mean      = mean(readcount),
+    Q3        = quantile(readcount, 0.75),
+    Max       = max(readcount),
+    .groups   = ""drop""
+  ) %>% 
+  dplyr::rename(""Barcode and Primer"" = ""primer_barcode"") #%>% 
+"
+"1","[1m[33mError[39m in `group_by()`:[22m
+[38;5;232m[33m![38;5;232m Must group by variables found in `.data`.
+[31m✖[38;5;232m Column `primer_barcode` is not found.[39m
+[90mRun `]8;;x-r-run:rlang::last_trace()rlang::last_trace()]8;;` to see where the error occurred.[39m
+"
