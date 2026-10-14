@@ -339,3 +339,4 @@ scripts/R_analysis/*html
 scripts/R_analysis/plots/*pdf
 # misc files for R analysis 
 scripts/R_analysis/accessionTaxa.sql
+.Rproj.user
