@@ -98,7 +98,7 @@ ggplot(retention_by_subsampling,
   scale_y_continuous(limits = c(0, 1), labels = scales::percent) +
   scale_color_manual(values = barcode_colours) +
   labs(x      = "Reads retained after subsampling (% of full depth)",
-       y      = paste0("Barcodes retained"),
+       y      = paste0("Number of barcodes with ≥", min_coverage, "x coverage"),
        colour = "Primer / barcode") +
   theme_minimal() +
   theme(legend.position = "top") +
