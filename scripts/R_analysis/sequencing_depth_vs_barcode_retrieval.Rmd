@@ -160,8 +160,36 @@ fractions_of_reads <- 2^(-seq(0, 6, by = 0.2))
 barcodes_passing_full_depth <- barcodes_unique %>%
   filter(readcount >= min_coverage) # filter contigs under threshold
 
+retention_by_depth_raw <- expand_grid(barcodes_passing_full_depth,
+                                  fraction_of_reads = fractions_of_reads) %>%
+  mutate(reads_after_subsampling = readcount * fraction_of_reads,           # reads left at this fraction
+         still_covered           = reads_after_subsampling >= min_coverage) %>%  # TRUE/FALSE per barcode
+  group_by(primer_barcode, fraction_of_reads) %>%
+  summarise(prop_barcodes_retained = mean(still_covered),                   # proportion of TRUE
+            .groups = "drop")
+
+ggplot(retention_by_depth_raw,
+       aes(x = fraction_of_reads, 
+           y = prop_barcodes_retained, 
+           colour = primer_barcode)) +
+  geom_step(linewidth = 0.8) +
+  scale_x_continuous(
+    transform = scales::transform_compose("log2", "reverse"),   # full depth on the left
+    breaks    = 2^(-(0:6)),
+    labels    = scales::percent
+  ) +
+  scale_y_continuous(limits = c(0, 1), labels = scales::percent) +
+  scale_color_manual(values = barcode_colours) +
+  labs(x      = "Reads retained after subsampling (% of full depth)",
+       y      = paste0("Barcodes still with ≥", min_coverage, "x coverage"),
+       colour = "Primer / barcode") +
+  theme_minimal()
+```
+
+
+```{r}
 # Expected proportion retained at each subsampling fraction
-retention_by_depth <- expand_grid(barcodes_passing_full_depth,
+retention_by_depth_prob <- expand_grid(barcodes_passing_full_depth,
                                   fraction_of_reads = fractions_of_reads) %>% # For each contig & fraction, the number of reads kept is readcount + fraction
   mutate(prob_still_covered = pbinom(min_coverage - 1,
                                      size       = readcount,
@@ -171,7 +199,7 @@ retention_by_depth <- expand_grid(barcodes_passing_full_depth,
   summarise(prop_barcodes_retained = mean(prob_still_covered), # averaging across barcodes gives the expected proportion retained
             .groups = "drop")
 
-ggplot(retention_by_depth,
+ggplot(retention_by_depth_prob,
        aes(x = fraction_of_reads, 
            y = prop_barcodes_retained, 
            colour = primer_barcode)) +
@@ -190,40 +218,5 @@ ggplot(retention_by_depth,
 ```
 
 
-```{r}
-fractions_of_reads <- seq(1, 0, by = -0.1) 
-
-barcodes_passing_full_depth <- barcodes_unique %>%
-  filter(readcount >= min_coverage) # filter contigs under threshold
-
-# Expected proportion retained at each subsampling fraction
-retention_by_depth <- expand_grid(barcodes_passing_full_depth,
-                                  fraction_of_reads = fractions_of_reads) %>% # For each contig & fraction, the number of reads kept is readcount + fraction
-  mutate(prob_still_covered = pbinom(min_coverage - 1,
-                                     size       = readcount,
-                                     prob       = fraction_of_reads,
-                                     lower.tail = FALSE)) %>% # probability of having >= min_coverage = upper tail of distribution.
-  group_by(primer_barcode, fraction_of_reads) %>%
-  summarise(prop_barcodes_retained = mean(prob_still_covered), # averaging across barcodes gives the expected proportion retained
-            .groups = "drop")
-
-ggplot(retention_by_depth,
-       aes(x = fraction_of_reads, 
-           y = prop_barcodes_retained, 
-           colour = primer_barcode)) +
-  geom_step(linewidth = 0.8) +
-  scale_x_continuous(
-    #transform = scales::transform_compose("log2", "reverse"),   # full depth on the left
-    transform  = "reverse",
-    breaks    = seq(1, 0, by = -0.1),
-    labels    = scales::percent
-  ) +
-  scale_y_continuous(limits = c(0, 1), labels = scales::percent) +
-  scale_color_manual(values = barcode_colours) +
-  labs(x      = "Reads retained after subsampling (% of full depth)",
-       y      = paste0("Barcodes still with ≥", min_coverage, "x coverage"),
-       colour = "Primer / barcode") +
-  theme_minimal()
-```
 
 
