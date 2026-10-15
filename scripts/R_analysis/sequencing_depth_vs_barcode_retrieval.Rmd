@@ -119,5 +119,5 @@ ggplot(retention_by_subsampling,
   theme_minimal() +
   theme(legend.position = "top") +
   guides(colour = guide_legend(nrow = 2)) +
-  facet_wrap(~dataset, nrow = 3, scales = "free_y")         # each dataset gets its own count range
+  facet_wrap(~dataset, nrow = 3)         # each dataset gets its own count range
 ```
