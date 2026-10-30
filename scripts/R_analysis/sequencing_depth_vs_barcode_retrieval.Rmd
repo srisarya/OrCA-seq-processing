@@ -11,6 +11,7 @@ output:
 
 ```{r setup}
 library(tidyverse)
+library(patchwork)
 
 knitr::opts_chunk$set(echo = TRUE)
 options(scipen = 999)
@@ -29,7 +30,7 @@ One row per consensus sequence (`qseqid`), with the dataset, sample, barcode, pr
 and number of supporting reads (`readcount`) parsed from the sequence name.
 
 ```{r load-consensus-barcodes}
-consensus_barcodes <- read_tsv("/Volumes/TOSHIBA/OrCA-seq_slurm/all_BLAST_top5.tsv", col_names = FALSE) %>%
+consensus_barcodes <- read_tsv("all_BLAST_top5.tsv", col_names = FALSE) %>%
   select(qseqid = X1, qseqs_length = X2) %>%
   mutate(
     # harmonise dataset names, then pull the pieces out of the sequence name
@@ -89,35 +90,44 @@ retention_by_subsampling <- expand_grid(barcodes_covered_at_full_depth,
             prop_barcodes_retained = mean(still_covered),   # proportion of barcodes still covered
             .groups = "drop")
 
-ggplot(retention_by_subsampling,
+percentage_plot<-
+  ggplot(retention_by_subsampling,
        aes(x = fraction_of_reads, y = prop_barcodes_retained, colour = primer_barcode)) +
   geom_line(linewidth = 0.9) +
   scale_x_continuous(transform = "reverse",              # full depth on the left
-                     breaks    = seq(1, 0, by = -0.1),  # fewer ticks so labels don't collide
+                     breaks    = seq(1, 0, by = -0.2),  # fewer ticks so labels don't collide
                      labels    = scales::percent) +
   scale_y_continuous(limits = c(0, 1), labels = scales::percent) +
   scale_color_manual(values = barcode_colours) +
-  labs(x      = "Reads retained after subsampling (% of full depth)",
-       y      = paste0("Number of barcodes with ≥", min_coverage, "x coverage"),
+  labs(x      = "Subsampling percentage",
+       y      = paste0("Percentage of barcodes with ≥", min_coverage, "x coverage"),
        colour = "Primer / barcode") +
   theme_minimal() +
   theme(legend.position = "top") +
   guides(colour = guide_legend(nrow = 2)) +              # two legend rows so nothing is cut off
-  facet_wrap(~dataset, nrow = 3)
+  facet_wrap(~dataset, nrow = 2)
 
+raw_counts_plot<-
 ggplot(retention_by_subsampling,
        aes(x = fraction_of_reads, y = n_barcodes_retained, colour = primer_barcode)) +
   geom_line(linewidth = 0.9) +
   scale_x_continuous(transform = "reverse",
-                     breaks    = seq(1, 0, by = -0.1),
+                     breaks    = seq(1, 0, by = -0.2),
                      labels    = scales::percent) +
   scale_y_continuous(limits = c(0, NA)) +                   # start at 0, let the top float
   scale_color_manual(values = barcode_colours) +
-  labs(x      = "Reads retained after subsampling (% of full depth)",
+  labs(x      = "Subsampling percentage",
        y      = paste0("Number of barcodes with ≥", min_coverage, "x coverage"),
        colour = "Primer / barcode") +
   theme_minimal() +
   theme(legend.position = "top") +
   guides(colour = guide_legend(nrow = 2)) +
-  facet_wrap(~dataset, nrow = 3)         # each dataset gets its own count range
+  facet_wrap(~dataset, nrow = 2)         # each dataset gets its own count range
+
+barcodes_vs_subsampling<- 
+  percentage_plot / raw_counts_plot + 
+  plot_layout(guides = "collect", axis_titles = "collect") & 
+  theme(legend.position = 'bottom')
+
+ggsave("plots/barcode_counts_subsampling_reads.pdf", barcodes_vs_subsampling, width = 8, height = 10)
 ```
