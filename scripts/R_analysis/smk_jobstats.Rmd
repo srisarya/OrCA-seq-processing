@@ -17,19 +17,27 @@ options(scipen = 999)
 ```
 
 ```{r}
-smk_job_runtimes <-fromJSON("../../runtimes.json") %>% 
+smk_job_runtimes <-fromJSON("../../../../OrCA-seq_snakemake/OrCA-seq-processing/runtimes.json") %>% 
   as.data.frame %>% 
   dplyr::select(data.values.rule, data.values.runtime) %>% 
   dplyr::rename("Job" = "data.values.rule", 
-                "Time" = "data.values.runtime") %>% 
-  dplyr::mutate(Job = factor(Job, levels = c("pychopper",
-                                                "cutadapt_sp5",
-                                                "cutadapt_sp27",
-                                                "amplicon_sorter",
-                                                "primer_removal",
-                                                "barrnap_extract",
-                                                "reorganize_cois")))
-
+                "Time" = "data.values.runtime") %>%
+  mutate(
+    Job = case_when(
+      Job == "pychopper" ~ "Pychopper",
+      Job == "cutadapt_sp5" ~ "Demultiplex round 1",
+      Job == "cutadapt_sp27" ~ "Demultiplex round 2",
+      Job == "amplicon_sorter" ~ "AmpliconSorter",
+      Job == "primer_removal" ~ "Primer removal",
+      Job == "barrnap_extract" ~ "Barrnap extraction",
+      Job == "reorganize_cois" ~ "Reorganise COIs")) %>% 
+  dplyr::mutate(Job = factor(Job, levels = c("Pychopper",
+                                                "Demultiplex round 1",
+                                                "Demultiplex round 2",
+                                                "AmpliconSorter",
+                                                "Primer removal",
+                                                "Barrnap extraction",
+                                                "Reorganise COIs")))
 average_times <-
   smk_job_runtimes %>% 
   group_by(Job) %>% 
@@ -39,33 +47,7 @@ average_times <-
          mean_hours = mean_minutes/60,
          sum_minutes = sum_seconds/60,
          sum_hours = sum_minutes/60)
-  
 
-smk_job_runtimes %>% 
-  ggplot(aes(x = Job, y= Time, color = Job)) +
-  geom_jitter()+
-  scale_y_log10(
-    breaks = axis_breaks,
-    labels = axis_labels)+
-  scale_color_viridis_d()+
-  labs(x = "Job",
-       y = "Time (seconds), scaled log10")+
-  theme_minimal(base_size = 12)+
-  theme(axis.text.x = element_text(angle = 45, hjust = 1),
-        legend.position = "none")
-
-
-smk_job_runtimes %>% 
-  ggplot(aes(x = Job, y= Time/60, color = Job)) +
-  geom_jitter()+
-  scale_color_viridis_d()+
-  labs(x = "Job",
-       y = "Time (minutes)")+
-  theme_minimal(base_size = 12)+
-  theme(axis.text.x = element_text(angle = 45, hjust = 1),
-        legend.position = "none")
-```
-```{r}
 cumulative <- smk_job_runtimes %>%
   group_by(Job) %>%
   summarise(Job_Total = sum(Time), .groups = "drop") %>%
@@ -75,7 +57,8 @@ cumulative <- smk_job_runtimes %>%
 axis_breaks <- 10^(-1:5)
 axis_labels <- scales::label_number(big.mark = ",", drop0trailing = TRUE)
 
-smk_job_runtimes %>%
+runtimes_plot<-
+  smk_job_runtimes %>%
   ggplot(aes(x = Job, y = Time, color = Job)) +
   geom_jitter() +
   geom_line(data = cumulative,
@@ -89,8 +72,11 @@ smk_job_runtimes %>%
   scale_color_viridis_d() +
   labs(x = "Job",
        y = "Time (seconds)\nscaled log10 per Job") +
-  theme_minimal(base_size = 12) +
+  theme_minimal(base_size = 10) +
   theme(axis.text.x = element_text(angle = 45, hjust = 1), 
-        legend.position = "none")
+        legend.position = "none",
+        axis.title.y.right = element_text(margin = margin(l = 15)))
+
+ggsave("plots/snakemake_runtimes.pdf", runtimes_plot, width = 5, height = 4)
 ```
 
