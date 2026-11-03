@@ -50,8 +50,7 @@ A Snakemake-based workflow for processing COI/28S/18S amplicon data locally!
 **Your directory structure should look like:**
    ```
    OrCA-seq-processing/
-   ├── Snakefile
-   ├── config.yaml
+   ├── OrCAseq_processing.smk (the snakefile)
    ├── configs/
    │   └── config_for_dataset.yaml
    ├── envs/
