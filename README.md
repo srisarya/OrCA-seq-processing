@@ -54,11 +54,4 @@
 
 ## Further notes
 The analysis can stop here, if you like. The scripts 06, 07 (both), 08, and 09, as well as those in the R analysis directory, can be used for command-line automated BLASTn searching and reorganising contigs for tree building or species delimitation. The scripts listed were all used in our paper. 
-  
-## Primer schematics
-### rRNA amplification
-![schematic for amplification of 18S/5.8S/partial 28S rRNA cistron, showing wiggly purple line representing DNA, yellow boxes where genes are (overlaid on the purple DNA), and red arrows labelled with primer sequence name at the positions where the primers sit to amplify genes, not to scale](schematics/18Setc.png)
-![schematic for amplification of full 28S rRNA gene, showing wiggly purple line representing DNA, yellow boxes where genes are (overlaid on the purple DNA), and red arrows labelled with primer sequence name at the positions where the primers sit to amplify genes, not to scale](schematics/28S_full.png)
-
-### COI amplification
-![schematic for amplification of partial COI gene, showing wiggly purple line representing DNA, yellow boxes where COI gene is (overlaid on the purple DNA), and red arrows labelled with primer sequence name at the positions where the primers sit to amplify COI, not to scale](schematics/COI.png)
+ 
