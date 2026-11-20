@@ -56,28 +56,24 @@ wildcard_constraints:
 # Parameters: defaults set in case config.yaml is missing them
 # ----------------------------------------
 PARAM_DEFAULTS = {
-    "m13_seqs": "adapters_primers/M13_seqs_for_pychopper.fa",
-    "m13_config": "adapters_primers/M13_config_for_pychopper.txt",
     "sp5_adapters": "adapters_primers/M13_amplicon_indices_forward.fa",
-    "sp27_adapters": "adapters_primers/M13_amplicon_indices_reverse_rc.fa",
-    "pychopper_q_score": 10,
-    "cutadapt_threads": 4,
-    "pychopper_threads": 4,
+    "sp27_adapters": "adapters_primers/M13_amplicon_indices_reverse_valid.fa",
+    "barbell_make_filters": "scripts/auxiliary_code/make_filters.py",
+    "barbell_n_patterns": 200,
+    "barbell_threads": 12,
     "amplicon_sorter_threads": 4,
     "primer_removal_threads": 1,
     "barrnap_threads": 1,
 }
 
-M13_SEQS = config.get("m13_seqs", PARAM_DEFAULTS["m13_seqs"])
-M13_CONFIG = config.get("m13_config", PARAM_DEFAULTS["m13_config"])
 SP5_ADAPTERS = config.get("sp5_adapters", PARAM_DEFAULTS["sp5_adapters"])
 SP27_ADAPTERS = config.get("sp27_adapters", PARAM_DEFAULTS["sp27_adapters"])
-PYCHOPPER_Q = config.get("pychopper_q_score", PARAM_DEFAULTS["pychopper_q_score"])
-CUTADAPT_THREADS = config.get("cutadapt_threads", PARAM_DEFAULTS["cutadapt_threads"])
-PYCHOPPER_THREADS = config.get("pychopper_threads", PARAM_DEFAULTS["pychopper_threads"])
+BARBELL_MAKE_FILTERS = config.get("barbell_make_filters", PARAM_DEFAULTS["barbell_make_filters"])
+BARBELL_N_PATTERNS = config.get("barbell_n_patterns", PARAM_DEFAULTS["barbell_n_patterns"])
+BARBELL_THREADS = config.get("barbell_threads", PARAM_DEFAULTS["barbell_threads"])
 AS_THREADS = config.get("amplicon_sorter_threads", PARAM_DEFAULTS["amplicon_sorter_threads"])
 PRIMER_REMOVAL_THREADS = config.get("primer_removal_threads", PARAM_DEFAULTS["primer_removal_threads"])
-BARRNAP_THREADS = config.get("barrnap_threads", PARAM_DEFAULTS["barrnap_threads"])  
+BARRNAP_THREADS = config.get("barrnap_threads", PARAM_DEFAULTS["barrnap_threads"])
 
 _mac_cfg = config.get("mac", False)
 if isinstance(_mac_cfg, str):
@@ -256,38 +252,15 @@ def read_adapter_ids(path, prefix):
 SP5_IDENTIFIERS = read_adapter_ids(SP5_ADAPTERS, "SP5_")
 SP27_IDENTIFIERS = read_adapter_ids(SP27_ADAPTERS, "SP27_")
 
-_unknown_invalid = sorted(set(INVALID_SP27) - set(SP27_IDENTIFIERS))
-if _unknown_invalid:
-    raise ValueError(
-        f"config 'invalid_sp27' lists IDs not found in {SP27_ADAPTERS}: "
-        f"{_unknown_invalid}"
-    )
+COMBOS = [f"{sp27}_{sp5}" for sp27 in SP27_IDENTIFIERS for sp5 in SP5_IDENTIFIERS]
 
-VALID_SP27_IDENTIFIERS = [
-    identifier
-    for identifier in SP27_IDENTIFIERS
-    if identifier not in INVALID_SP27
-]
-COMBOS = [
-    f"{sp27}_{sp5}"
-    for sp27 in VALID_SP27_IDENTIFIERS
-    for sp5 in SP5_IDENTIFIERS
-]
-SP5_FASTQ_OUTPUTS = [
-    f"{WORK_DIR}/demuxed/SP5/{{sample}}/{identifier}_{DATASET_NAME}.fastq.gz"
-    for identifier in SP5_IDENTIFIERS
-]
+if not COMBOS:
+    raise ValueError(f"No adapter combinations found in {SP5_ADAPTERS} / {SP27_ADAPTERS}")
+
 SP27_FASTQ_OUTPUTS = [
-    f"{WORK_DIR}/demuxed/SP27/{{sample}}/{combo}_{DATASET_NAME}.fastq.gz"
+    f"{WORK_DIR}/barbell/{{sample}}/demuxed/{combo}_{DATASET_NAME}.fastq.gz"
     for combo in COMBOS
 ]
-SP27_REPORT_OUTPUTS = [
-    f"{WORK_DIR}/demuxed/SP27/{{sample}}/{identifier}_{DATASET_NAME}.json"
-    for identifier in SP5_IDENTIFIERS
-]
-
-if not VALID_SP27_IDENTIFIERS:
-    raise ValueError("No valid SP27 adapters remain after INVALID_SP27 filtering")
 
 FINAL_TARGETS = []
 for sample in SAMPLES:
@@ -322,146 +295,88 @@ rule all:
     input:
         FINAL_TARGETS
 # ----------------------------------------
-# 1: Pychopper
+# 1: Barbell annotate -> inspect -> filter
 # ----------------------------------------
-rule pychopper:
+rule barbell_filter:
     input:
         fastq=lambda wc: str(sample_fastq_path(wc.sample))
     output:
-        pass_fastq=(
-            f"{WORK_DIR}/pychopped/"
-            f"{{sample}}_pass.fastq.gz"
-        ),
-        rescued_fastq=(
-            f"{WORK_DIR}/pychopped/"
-            f"{{sample}}_rescued.fastq"
-        ),
-        unclass_fastq=(
-            f"{WORK_DIR}/pychopped/"
-            f"{{sample}}_unclass.fastq"
-        ),
-        short_fastq=(
-            f"{WORK_DIR}/pychopped/"
-            f"{{sample}}_short.fastq"
-        ),
-        stats=(
-            f"{WORK_DIR}/pychopped/"
-            f"{{sample}}_stats.out"
-        )
-    threads:
-        PYCHOPPER_THREADS
-    conda:
-        "envs/pychopper.yaml"
-    log:
-        f"{WORK_DIR}/logs/pychopper_{{sample}}.log"
-    shell:
-        r"""
-        set -euo pipefail
-        mkdir -p "$(dirname "{output.pass_fastq}")"
-        mkdir -p "$(dirname "{log}")"
-        pychopper \
-            -b "{M13_SEQS}" \
-            -c "{M13_CONFIG}" \
-            -k LSK114 \
-            -Q {PYCHOPPER_Q} \
-            -w "{output.rescued_fastq}" \
-            -u "{output.unclass_fastq}" \
-            -l "{output.short_fastq}" \
-            -S "{output.stats}" \
-            -p \
-            -t {threads} \
-            -m edlib \
-            "{input.fastq}" \
-            2> "{log}" \
-            | gzip -c > "{output.pass_fastq}"
-
-        """
-
-# ----------------------------------------
-# 2a: Cutadapt SP5
-# ----------------------------------------
-rule cutadapt_sp5:
-    input:
-        f"{WORK_DIR}/pychopped/{{sample}}_pass.fastq.gz"
-    output:
-        fastqs=SP5_FASTQ_OUTPUTS,
-        report=f"{WORK_DIR}/demuxed/SP5/{{sample}}/cutadapt_SP5_{DATASET_NAME}.json"
-    threads:
-        CUTADAPT_THREADS
-    conda:
-        "envs/cutadapt.yaml"
-    log:
-        f"{WORK_DIR}/logs/cutadapt_sp5_{{sample}}.log"
-    shell:
-        r"""
-        set -euo pipefail
-        outdir="$(dirname "{output.fastqs[0]}")"
-        mkdir -p "$outdir"
-        mkdir -p "$(dirname "{log}")"
-        cutadapt \
-            --action=trim \
-            -e 0.1 \
-            -j {threads} \
-            --rc \
-            -g "file:{SP5_ADAPTERS}" \
-            -o "$outdir/{{name}}_{DATASET_NAME}.fastq.gz" \
-            "{input}" \
-            --json="{output.report}" \
-            2> "{log}"
-        find "$outdir" \
-            -type f \
-            -name "*unknown*" \
-            -delete || true
-        """
-# ----------------------------------------
-# 2b: Cutadapt SP27
-# ----------------------------------------
-rule cutadapt_sp27:
-    input:
-        sp5_fastqs=SP5_FASTQ_OUTPUTS
-    output:
-        fastqs=SP27_FASTQ_OUTPUTS,
-        reports=SP27_REPORT_OUTPUTS
+        annotate=f"{WORK_DIR}/barbell/{{sample}}/annotate.tsv",
+        patterns=f"{WORK_DIR}/barbell/{{sample}}/patterns.txt",
+        filters=f"{WORK_DIR}/barbell/{{sample}}/filters.txt",
+        filtered=f"{WORK_DIR}/barbell/{{sample}}/filtered.tsv"
     params:
-        identifiers=" ".join(SP5_IDENTIFIERS),
-        invalid=" ".join(INVALID_SP27)
+        sp5=SP5_ADAPTERS,
+        sp27=SP27_ADAPTERS,
+        make_filters=BARBELL_MAKE_FILTERS,
+        n_patterns=BARBELL_N_PATTERNS
     threads:
-        CUTADAPT_THREADS
+        BARBELL_THREADS
     conda:
-        "envs/cutadapt.yaml"
+        "envs/barbell.yaml"
     log:
-        f"{WORK_DIR}/logs/cutadapt_sp27_{{sample}}.log"
+        f"{WORK_DIR}/logs/barbell_filter_{{sample}}.log"
+    shell:
+        """
+        set -euo pipefail
+        mkdir -p "$(dirname "{output.annotate}")" "$(dirname "{log}")"
+        : > "{log}"
+
+        barbell annotate -i "{input.fastq}" -t {threads} -o "{output.annotate}" \
+            -b Ftag,Rtag -q "{params.sp5},{params.sp27}" --verbose \
+            >> "{log}" 2>&1
+
+        barbell inspect -i "{output.annotate}" -n {params.n_patterns} \
+            > "{output.patterns}" 2>> "{log}"
+
+        python "{params.make_filters}" "{output.patterns}" \
+            -o "{output.filters}" >> "{log}" 2>&1
+
+        barbell filter -i "{output.annotate}" -o "{output.filtered}" \
+            -f "{output.filters}" >> "{log}" 2>&1
+        """
+
+# ----------------------------------------
+# 2: Barbell trim + rename to {combo}_{DATASET}.fastq.gz
+# ----------------------------------------
+rule barbell_trim:
+    input:
+        fastq=lambda wc: str(sample_fastq_path(wc.sample)),
+        filtered=f"{WORK_DIR}/barbell/{{sample}}/filtered.tsv"
+    output:
+        fastqs=SP27_FASTQ_OUTPUTS
+    params:
+        trim_dir=lambda wc: f"{WORK_DIR}/barbell/{wc.sample}/demuxed_trimmed",
+        sp5_ids=" ".join(SP5_IDENTIFIERS),
+        sp27_ids=" ".join(SP27_IDENTIFIERS)
+    conda:
+        "envs/barbell.yaml"
+    log:
+        f"{WORK_DIR}/logs/barbell_trim_{{sample}}.log"
     shell:
         r"""
         set -euo pipefail
         outdir="$(dirname "{output.fastqs[0]}")"
-        mkdir -p "$outdir"
-        mkdir -p "$(dirname "{log}")"
+        mkdir -p "$outdir" "{params.trim_dir}" "$(dirname "{log}")"
         : > "{log}"
-        for identifier in {params.identifiers}; do
-            echo "Processing: ${{identifier}}" >> "{log}"
-            input_file="$(dirname "{input.sp5_fastqs[0]}")/${{identifier}}_{DATASET_NAME}.fastq.gz"
-            cutadapt \
-                --action=trim \
-                -e 0.1 \
-                -j {threads} \
-                --rc \
-                -a "file:{SP27_ADAPTERS}" \
-                -o "$outdir/{{name}}_${{identifier}}_{DATASET_NAME}.fastq.gz" \
-                "$input_file" \
-                --json="$outdir/${{identifier}}_{DATASET_NAME}.json" \
-                >> "{log}" 2>&1
-        done
-        # Remove unknown reads.
-        find "$outdir" \
-            -type f \
-            -name "*unknown*" \
-            -delete || true
-        for bad in {params.invalid}; do
-            find "$outdir" \
-                -type f \
-                -name "${{bad}}_*_{DATASET_NAME}.fastq.gz" \
-                -delete || true
+
+        barbell trim --sort-labels --flip --no-orientation \
+            -i "{input.filtered}" -r "{input.fastq}" \
+            -o "{params.trim_dir}/" >> "{log}" 2>&1
+
+        # barbell names files SP27_xxx__SP5_yyy.trimmed.fastq (uncompressed);
+        # combos with no reads get a valid empty .fastq.gz
+        for sp27 in {params.sp27_ids}; do
+            for sp5 in {params.sp5_ids}; do
+                src="{params.trim_dir}/${{sp27}}__${{sp5}}.trimmed.fastq"
+                dest="$outdir/${{sp27}}_${{sp5}}_{DATASET_NAME}.fastq.gz"
+                if [ -f "$src" ]; then
+                    gzip -c "$src" > "$dest"
+                else
+                    echo "no reads: ${{sp27}}_${{sp5}}" >> "{log}"
+                    : | gzip -c > "$dest"
+                fi
+            done
         done
         """
 # ----------------------------------------
@@ -478,9 +393,9 @@ rule amplicon_sorter:
     input:
         fastq=lambda wc: os.path.join(
             WORK_DIR,
-            "demuxed",
-            "SP27",
+            "barbell",
             wc.sample,
+            "demuxed",
             f"{wc.combo}_{DATASET_NAME}.fastq.gz"
         )
     params:
