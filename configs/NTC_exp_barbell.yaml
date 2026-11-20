@@ -1,0 +1,50 @@
+# OrCA-seq processing workflow configuration
+# I have tested this on a MacBook Pro M3 (16GB)
+
+# Processing parameters
+barbell_threads: 16 # barbell annotate threads
+barbell_n_patterns: 200 # number of top patterns passed to `barbell inspect -n`
+amplicon_sorter_threads: 4 # amplicon_sorter threads
+primer_removal_threads: 1 # primer removal threads
+barrnap_threads: 1 # barrnap threads
+
+# if running on PC, set to false, else if on mac like me, keep as true
+mac: false
+
+# Dataset identification
+dataset_name: "NTC_exp"
+
+# Input/Output directories
+raw_reads: "input_reads" # Directory containing input FASTQ files
+work_dir: "results_NTC_barbell" # All outputs go here
+
+# Adapter file paths (relative to repo root)
+sp5_adapters: "adapters_primers/M13_amplicon_indices_forward.fa"
+# Only the SP27 indices actually used are listed in this file. In our study we
+# used a 96-well plate (SP5 across the 12 columns, SP27 down the 8 rows), so
+# SP27_009-012 are excluded from it and no `invalid_sp27` list is needed.
+sp27_adapters: "adapters_primers/M13_amplicon_indices_reverse_valid.fa"
+
+# Barbell filter-generation script (relative to repo root, or an absolute path)
+barbell_make_filters: "scripts/auxiliary_code/make_filters.py"
+
+# Primer files per amplicon type -- each amplicon_type below must have
+# a matching entry here so primer_removal strips the correct primers.
+# as per the study, we didn't run the second round of primer removal,
+# but you can set this to true if you want to try it out.
+# you will need to add a line beneath each amplicon type with the path to the primer file for that amplicon type
+primers:
+  COIs:
+    r1: adapters_primers/COI_primers.fa
+  rRNAs:
+    r1: adapters_primers/RNA_primers.fa
+run_round2: false
+
+# Amplicon types to process, each with its own size filter.
+amplicon_types:
+  rRNAs:
+    min_size: 1000
+    max_size: 3500
+  COIs:
+    min_size: 300
+    max_size: 900
