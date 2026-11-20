@@ -1,8 +1,13 @@
-name: barbell_env
+name: barbell
 channels:
   - conda-forge
   - bioconda
   - nodefaults
 dependencies:
-  - barbell
+  - rust
+  - git
+  - c-compiler
+  - cxx-compiler
+  - make
+  - cmake
   - python>=3.10
