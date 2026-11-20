@@ -371,7 +371,7 @@ rule barbell_trim:
                 src="{params.trim_dir}/${{sp27}}__${{sp5}}.trimmed.fastq"
                 dest="$outdir/${{sp27}}_${{sp5}}_{DATASET_NAME}.fastq.gz"
                 if [ -f "$src" ]; then
-                    gzip -c "$src" > "$dest"
+                    gzip -c "$src" > "$dest" && rm -f "$src"
                 else
                     echo "no reads: ${{sp27}}_${{sp5}}" >> "{log}"
                     : | gzip -c > "$dest"
