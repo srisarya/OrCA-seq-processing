@@ -11,3 +11,4 @@ dependencies:
   - make
   - cmake
   - python>=3.10
+  - seqkit
