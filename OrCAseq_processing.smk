@@ -1,6 +1,6 @@
 """
 OrCA-seq amplicon processing workflow for local MacBook Pro M3 execution
-Covers: pychopper -> cutadapt (SP5 x SP27 demux) -> amplicon_sorter -> primer_removal -> barrnap/COI reorganization
+Covers: barbell -> amplicon_sorter -> primer_removal -> barrnap/COI reorganization
 """
 # ----------------------------------------
 # Setup
@@ -71,6 +71,12 @@ SP27_ADAPTERS = config.get("sp27_adapters", PARAM_DEFAULTS["sp27_adapters"])
 BARBELL_MAKE_FILTERS = config.get("barbell_make_filters", PARAM_DEFAULTS["barbell_make_filters"])
 BARBELL_N_PATTERNS = config.get("barbell_n_patterns", PARAM_DEFAULTS["barbell_n_patterns"])
 BARBELL_THREADS = config.get("barbell_threads", PARAM_DEFAULTS["barbell_threads"])
+REMOVE_M13 = bool(config.get("remove_m13", True))
+M13_MISMATCHES = int(config.get("m13_mismatches", 1))
+M13_THREADS = int(config.get("m13_filter_threads", 4))
+M13_FASTA = config.get("m13_fasta", "adapters_primers/M13_segment_only.fa")
+if REMOVE_M13 and not Path(M13_FASTA).exists():
+    raise FileNotFoundError(f"M13 motif file not found: {M13_FASTA}")
 AS_THREADS = config.get("amplicon_sorter_threads", PARAM_DEFAULTS["amplicon_sorter_threads"])
 PRIMER_REMOVAL_THREADS = config.get("primer_removal_threads", PARAM_DEFAULTS["primer_removal_threads"])
 BARRNAP_THREADS = config.get("barrnap_threads", PARAM_DEFAULTS["barrnap_threads"])
@@ -80,12 +86,6 @@ if isinstance(_mac_cfg, str):
     # tolerate quoted values such as "true" / "false" / "yes"
     _mac_cfg = _mac_cfg.strip().lower() in ("true", "yes", "1")
 MAC = bool(_mac_cfg)
-
-
-INVALID_SP27 = config.get("invalid_sp27") or []
-if isinstance(INVALID_SP27, str):
-    INVALID_SP27 = [INVALID_SP27]
-INVALID_SP27 = list(dict.fromkeys(INVALID_SP27))
 
 # ----------------------------------------
 # Amplicon decision schema
@@ -342,13 +342,20 @@ rule barbell_filter:
 rule barbell_trim:
     input:
         fastq=lambda wc: str(sample_fastq_path(wc.sample)),
-        filtered=f"{WORK_DIR}/barbell/{{sample}}/filtered.tsv"
+        filtered=f"{WORK_DIR}/barbell/{{sample}}/filtered.tsv",
+        m13=[M13_FASTA] if REMOVE_M13 else []
     output:
-        fastqs=SP27_FASTQ_OUTPUTS
+        fastqs=SP27_FASTQ_OUTPUTS,
+        m13_summary=f"{WORK_DIR}/barbell/{{sample}}/m13_filter_summary.tsv"
     params:
         trim_dir=lambda wc: f"{WORK_DIR}/barbell/{wc.sample}/demuxed_trimmed",
         sp5_ids=" ".join(SP5_IDENTIFIERS),
-        sp27_ids=" ".join(SP27_IDENTIFIERS)
+        sp27_ids=" ".join(SP27_IDENTIFIERS),
+        remove_m13="1" if REMOVE_M13 else "0",
+        mm=M13_MISMATCHES,
+        m13_fasta=M13_FASTA
+    threads:
+        M13_THREADS
     conda:
         "envs/barbell.yaml"
     log:
@@ -359,6 +366,9 @@ rule barbell_trim:
         outdir="$(dirname "{output.fastqs[0]}")"
         mkdir -p "$outdir" "{params.trim_dir}" "$(dirname "{log}")"
         : > "{log}"
+        tmp="$(mktemp -d)"
+        trap 'rm -rf "$tmp"' EXIT
+        printf "file\treads_in\treads_removed\treads_out\n" > "{output.m13_summary}"
 
         barbell trim --sort-labels --flip --no-orientation \
             -i "{input.filtered}" -r "{input.fastq}" \
@@ -369,13 +379,35 @@ rule barbell_trim:
         for sp27 in {params.sp27_ids}; do
             for sp5 in {params.sp5_ids}; do
                 src="{params.trim_dir}/${{sp27}}__${{sp5}}.trimmed.fastq"
-                dest="$outdir/${{sp27}}_${{sp5}}_{DATASET_NAME}.fastq.gz"
-                if [ -f "$src" ]; then
-                    gzip -c "$src" > "$dest" && rm -f "$src"
-                else
+                name="${{sp27}}_${{sp5}}_{DATASET_NAME}.fastq.gz"
+                dest="$outdir/$name"
+
+                if [ ! -f "$src" ]; then
                     echo "no reads: ${{sp27}}_${{sp5}}" >> "{log}"
                     : | gzip -c > "$dest"
+                    printf "%s\t0\t0\t0\n" "$name" >> "{output.m13_summary}"
+                    continue
                 fi
+
+                n_in=$(( $(wc -l < "$src") / 4 ))
+                n_rm=0
+
+                if [ "{params.remove_m13}" = "1" ]; then
+                    # IDs of reads containing any M13 motif (plus strand; revcomps listed explicitly)
+                    seqkit locate -j {threads} -P -m {params.mm} -f "{input.m13}" "$src" \
+                        | tail -n +2 | cut -f1 | sort -u > "$tmp/ids.txt"
+                    n_rm=$(wc -l < "$tmp/ids.txt")
+                fi
+
+                if [ "$n_rm" -gt 0 ]; then
+                    seqkit grep -j {threads} -v -f "$tmp/ids.txt" "$src" -o "$dest" >> "{log}" 2>&1
+                else
+                    gzip -c "$src" > "$dest"
+                fi
+                rm -f "$src"
+
+                n_out=$(( $(zcat "$dest" | wc -l) / 4 ))
+                printf "%s\t%s\t%s\t%s\n" "$name" "$n_in" "$n_rm" "$n_out" >> "{output.m13_summary}"
             done
         done
         """
