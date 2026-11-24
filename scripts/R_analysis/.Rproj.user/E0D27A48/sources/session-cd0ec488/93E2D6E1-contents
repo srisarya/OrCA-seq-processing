@@ -1,0 +1,156 @@
+---
+title: "Barcodes vs depth dropoff"
+date: "`r format(Sys.time(), '%d %B, %Y')`"
+output:
+  html_document:
+    toc: true
+    df_print: paged
+  pdf_document:
+    toc: true
+---
+
+```{r setup}
+library(tidyverse)
+library(ggplot2)
+
+barcode_colours <- c("maroon4",
+                     "steelblue4",
+                     "lightskyblue",
+                     "olivedrab1",
+                     "darkolivegreen")
+
+knitr::opts_chunk$set(echo = TRUE)
+options(scipen = 999)
+```
+
+
+
+```{r}
+barcodes_unique <- read_tsv("all_BLAST_top5.tsv", col_names = F) %>%
+  dplyr::select("X1", "X2", "X3", "X7") %>%
+  dplyr::rename(
+    qseqid = X1,
+    qseqs_length = X2,
+    sseqid = X3,
+    taxid = X7
+  ) %>%
+  dplyr::mutate(
+    #some regexing to get separated out information
+    qseqid = gsub("BWplate", "Garden", qseqid),
+    qseqid = gsub("day", "Lakes", qseqid),
+    dataset = str_extract(qseqid, "Lakes[0-9]|Garden[0-9]"),
+    gb_num = str_extract(sseqid, "(?<=(gb|emb)\\|)[^|]+"),
+    # needed for taxID info
+    sseqid = stringr::str_extract(sseqid, "(?<=gi\\|)[^|]+"),
+    readcount = gsub("readcount_", "", (str_extract(
+      qseqid, "readcount_[0-9]+"
+    ))),
+    readcount = as.numeric(readcount),
+    sample = paste0(
+      stringr::str_extract(qseqid, "SP27_[0-9]+_SP5_[0-9]+"),
+      "_",
+      dataset
+    ),
+    # the adapters are repeated per dataset so pasting them together keeps things individual
+    barcode = case_when(
+      # what barcode is this?
+      grepl("28S", qseqid) ~ "28S",
+      grepl("18S", qseqid) ~ "18S",
+      TRUE ~ "COI"
+    ),
+    primer_set = case_when(
+      # which primers were used?
+      barcode == "COI" & qseqs_length <= 499 ~ "Sauron",
+      barcode == "COI" & qseqs_length >= 500 ~ "Moorea",
+      barcode == "28S" & qseqs_length <= 2499 ~ "18S+",
+      barcode == "28S" &
+        qseqs_length >= 2500 ~ "28S_solo",
+      barcode == "18S" ~ "18S+",
+      TRUE ~ "?"
+    )
+   ) %>% 
+  mutate(primer_barcode = paste(barcode, ",", primer_set)) %>% 
+  distinct(qseqid, primer_barcode, readcount, dataset)
+```
+
+
+```{r}
+# For each primer_barcode, count barcodes with readcount >= x
+dropoff_df <- barcodes_unique %>%
+  group_by(primer_barcode) %>%
+  arrange(readcount, .by_group = TRUE) %>%
+  mutate(n_remaining = n() - row_number() + 1) %>%   # barcodes with readcount >= this value
+  ungroup() %>%
+  group_by(primer_barcode, readcount) %>%
+  summarise(n_remaining = max(n_remaining), .groups = "drop") %>%  # collapse ties
+  group_by(primer_barcode) %>%
+  mutate(prop_remaining = n_remaining / max(n_remaining)) %>%
+  ungroup()
+
+# Plot exact counts
+ggplot(dropoff_df, aes(readcount, n_remaining, colour = primer_barcode)) +
+  geom_step(linewidth = 0.8) +
+  scale_x_log10(
+    breaks = c(10, 100, 1000),
+    labels = c(10, 100, 1000))+
+  scale_color_manual(values = barcode_colours)+
+  labs(x = "Minimum read count (read depth threshold, log 10 scale)",
+       y = "Number of barcodes retained",
+       colour = "Primer / barcode",
+       title = "Exact counts") +
+  theme_minimal()
+
+# Proportion version which makes coi even with others
+ggplot(dropoff_df, aes(readcount, prop_remaining, colour = primer_barcode)) +
+  geom_step(linewidth = 0.8) +
+  scale_x_log10(
+    breaks = c(10, 100, 1000),
+    labels = c(10, 100, 1000))+
+  scale_color_manual(values = barcode_colours)+
+  labs(x = "Minimum read count, log 10 scale", 
+       y = "Proportion of barcodes retained",
+       colour = "Primer / barcode",
+       title = "Proportions") +
+  theme_minimal()
+
+# Facet by dataset
+dropoff_df_by_dataset <- barcodes_unique %>%
+  group_by(primer_barcode, dataset) %>%
+  arrange(readcount, .by_group = TRUE) %>%
+  mutate(n_remaining = n() - row_number() + 1) %>%   # barcodes with readcount >= this value
+  ungroup() %>%
+  group_by(primer_barcode, readcount, dataset) %>%
+  summarise(n_remaining = max(n_remaining), .groups = "drop") %>%  # collapse ties
+  group_by(primer_barcode) %>%
+  mutate(prop_remaining = n_remaining / max(n_remaining)) %>%
+  ungroup()
+
+# exact counts
+ggplot(dropoff_df_by_dataset, aes(readcount, n_remaining, colour = primer_barcode)) +
+  geom_step(linewidth = 0.8) +
+  scale_x_log10(
+    breaks = c(10, 100, 1000),
+    labels = c(10, 100, 1000))+
+  scale_color_manual(values = barcode_colours)+
+  labs(x = "Minimum read count (read depth threshold, log 10 scale)",
+       y = "Number of barcodes retained",
+       colour = "Primer / barcode",
+       title = "Exact counts, faceted by dataset") +
+  theme_minimal()+
+  facet_wrap(~dataset)
+
+# proportion
+ggplot(dropoff_df_by_dataset, aes(readcount, prop_remaining, colour = primer_barcode)) +
+  geom_step(linewidth = 0.8) +
+  scale_x_log10(
+    breaks = c(10, 100, 1000),
+    labels = c(10, 100, 1000))+
+  scale_color_manual(values = barcode_colours)+
+  labs(x = "Minimum read count", 
+       y = "Proportion of barcodes retained",
+       colour = "Primer / barcode",
+       title = "Proportions, faceted by dataset") +
+  theme_minimal()+
+  facet_wrap(~dataset)
+```
+

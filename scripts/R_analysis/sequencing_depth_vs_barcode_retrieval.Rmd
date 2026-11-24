@@ -1,0 +1,133 @@
+---
+title: "Barcodes vs depth dropoff"
+date: "`r format(Sys.time(), '%d %B, %Y')`"
+output:
+  html_document:
+    toc: true
+    df_print: paged
+  pdf_document:
+    toc: true
+---
+
+```{r setup}
+library(tidyverse)
+library(patchwork)
+
+knitr::opts_chunk$set(echo = TRUE)
+options(scipen = 999)
+
+# one colour per primer/barcode combination (5 combinations)
+barcode_colours <- c("maroon4",
+                     "steelblue4",
+                     "lightskyblue",
+                     "olivedrab1",
+                     "darkolivegreen")
+```
+
+# Load consensus barcodes
+
+One row per consensus sequence (`qseqid`), with the dataset, sample, barcode, primer set
+and number of supporting reads (`readcount`) parsed from the sequence name.
+
+```{r load-consensus-barcodes}
+consensus_barcodes <- read_tsv("all_BLAST_top5.tsv", col_names = FALSE) %>%
+  select(qseqid = X1, qseqs_length = X2) %>%
+  mutate(
+    # harmonise dataset names, then pull the pieces out of the sequence name
+    qseqid    = gsub("BWplate", "Garden", qseqid),
+    qseqid    = gsub("day", "Lakes", qseqid),
+    dataset   = str_extract(qseqid, "Lakes[0-9]|Garden[0-9]"),
+    readcount = as.numeric(str_extract(qseqid, "(?<=readcount_)[0-9]+")),
+
+    # adapters are repeated per dataset, so pasting the dataset on keeps samples distinct
+    sample = paste0(str_extract(qseqid, "SP27_[0-9]+_SP5_[0-9]+"), "_", dataset),
+
+    # which barcode is this?
+    barcode = case_when(
+      grepl("28S", qseqid) ~ "28S",
+      grepl("18S", qseqid) ~ "18S",
+      TRUE                 ~ "COI"
+    ),
+
+    # which primers were used? (inferred from barcode and consensus length)
+    primer_set = case_when(
+      barcode == "COI" & qseqs_length <= 499  ~ "Sauron",
+      barcode == "COI" & qseqs_length >= 500  ~ "Moorea",
+      barcode == "28S" & qseqs_length <= 2499 ~ "18S+",
+      barcode == "28S" & qseqs_length >= 2500 ~ "28S_solo",
+      barcode == "18S"                        ~ "18S+",
+      TRUE                                    ~ "?"
+    ),
+    primer_barcode = paste(barcode, ",", primer_set)
+  ) %>%
+  # the BLAST file has several hits per consensus; keep one row per consensus
+  distinct(qseqid, primer_barcode, readcount, dataset, sample)
+```
+# Barcodes retained as reads are subsampled
+
+If only a fraction of the reads had been kept, what proportion of the barcodes that currently
+have at least 20x coverage would still have at least 20x?
+
+A barcode with `readcount` reads has about `readcount * fraction` reads after subsampling,
+so it stays covered if that is at least `min_coverage`.
+
+```{r subsampling-retention, fig.height = 8, fig.width = 8}
+min_coverage       <- 20                       # reads a barcode needs to count as "covered"
+fractions_of_reads <- seq(1, 0, by = -0.01)    # 100% of reads down to 0% in 1% steps (fine grid = smooth curve)
+
+# Barcodes below the threshold at full depth can't recover, so exclude them
+# (this makes every curve start at 100%)
+barcodes_covered_at_full_depth <- consensus_barcodes %>%
+  filter(readcount >= min_coverage)
+
+# For every barcode x fraction: reads left, and whether that is still enough
+retention_by_subsampling <- expand_grid(barcodes_covered_at_full_depth,
+                                        fraction_of_reads = fractions_of_reads) %>%
+  mutate(reads_after_subsampling = readcount * fraction_of_reads,
+         still_covered           = reads_after_subsampling >= min_coverage) %>%
+  group_by(primer_barcode, dataset, fraction_of_reads) %>%
+  summarise(n_barcodes_retained    = sum(still_covered),    # raw count still covered
+            prop_barcodes_retained = mean(still_covered),   # proportion of barcodes still covered
+            .groups = "drop")
+
+percentage_plot<-
+  ggplot(retention_by_subsampling,
+       aes(x = fraction_of_reads, y = prop_barcodes_retained, colour = primer_barcode)) +
+  geom_line(linewidth = 0.9) +
+  scale_x_continuous(transform = "reverse",              # full depth on the left
+                     breaks    = seq(1, 0, by = -0.2),  # fewer ticks so labels don't collide
+                     labels    = scales::percent) +
+  scale_y_continuous(limits = c(0, 1), labels = scales::percent) +
+  scale_color_manual(values = barcode_colours) +
+  labs(x      = "Subsampling percentage",
+       y      = paste0("Percentage of barcodes with ≥", min_coverage, "x coverage"),
+       colour = "Primer / barcode") +
+  theme_minimal() +
+  theme(legend.position = "top") +
+  guides(colour = guide_legend(nrow = 2)) +              # two legend rows so nothing is cut off
+  facet_wrap(~dataset, nrow = 2)
+
+raw_counts_plot<-
+ggplot(retention_by_subsampling,
+       aes(x = fraction_of_reads, y = n_barcodes_retained, colour = primer_barcode)) +
+  geom_line(linewidth = 0.9) +
+  scale_x_continuous(transform = "reverse",
+                     breaks    = seq(1, 0, by = -0.2),
+                     labels    = scales::percent) +
+  scale_y_continuous(limits = c(0, NA)) +                   # start at 0, let the top float
+  scale_color_manual(values = barcode_colours) +
+  labs(x      = "Subsampling percentage",
+       y      = paste0("Number of barcodes with ≥", min_coverage, "x coverage"),
+       colour = "Primer / barcode") +
+  theme_minimal() +
+  theme(legend.position = "top") +
+  guides(colour = guide_legend(nrow = 2)) +
+  facet_wrap(~dataset, nrow = 2)         # each dataset gets its own count range
+
+barcodes_vs_subsampling<- 
+  percentage_plot / raw_counts_plot + 
+  plot_layout(guides = "collect", axis_titles = "collect") & 
+  theme(legend.position = 'bottom')
+
+ggsave("plots/barcode_counts_subsampling_reads.pdf", barcodes_vs_subsampling, width = 8, height = 10)
+```

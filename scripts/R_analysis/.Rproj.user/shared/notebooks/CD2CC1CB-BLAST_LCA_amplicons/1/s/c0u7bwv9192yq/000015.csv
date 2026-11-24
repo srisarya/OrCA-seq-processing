@@ -1,0 +1,53 @@
+"0","# these are the large-scale BLAST results for all contigs: outfmt 6, with 5 sseqids per sequence (qseqid)
+all_BLAST_barcodes <- read_tsv(""all_BLAST_top5.tsv"", col_names = F) %>%
+  dplyr::select(""X1"", ""X2"", ""X3"", ""X7"") %>%
+  dplyr::rename(
+    qseqid = X1,
+    qseqs_length = X2,
+    sseqid = X3,
+    taxid = X7
+  ) %>%
+  dplyr::mutate(
+    #some regexing to get separated out information
+    qseqid = gsub(""BWplate"", ""Garden"", qseqid),
+    qseqid = gsub(""day"", ""Lakes"", qseqid),
+    dataset = str_extract(qseqid, ""Lakes[0-9]|Garden[0-9]""),
+    gb_num = str_extract(sseqid, ""(?<=(gb|emb)\\|)[^|]+""),
+    # needed for taxID info
+    sseqid = stringr::str_extract(sseqid, ""(?<=gi\\|)[^|]+""),
+    readcount = gsub(""readcount_"", """", (str_extract(
+      qseqid, ""readcount_[0-9]+""
+    ))),
+    readcount = as.numeric(readcount),
+    sample = paste0(
+      stringr::str_extract(qseqid, ""SP27_[0-9]+_SP5_[0-9]+""),
+      ""_"",
+      dataset
+    ),
+    # the adapters are repeated per dataset so pasting them together keeps things individual
+    barcode = case_when(
+      # what barcode is this?
+      grepl(""28S"", qseqid) ~ ""28S"",
+      grepl(""18S"", qseqid) ~ ""18S"",
+      TRUE ~ ""COI""
+    ),
+    primer_set = case_when(
+      # which primers were used?
+      barcode == ""COI"" & qseqs_length <= 499 ~ ""Sauron"",
+      barcode == ""COI"" & qseqs_length >= 500 ~ ""Moorea"",
+      barcode == ""28S"" & qseqs_length <= 2499 ~ ""18S+"",
+      barcode == ""28S"" &
+        qseqs_length >= 2500 ~ ""28S_solo"",
+      barcode == ""18S"" ~ ""18S+"",
+      TRUE ~ ""?""
+    )
+  )# %>%
+"
+"2","[1mRows: [22m[34m29870[39m [1mColumns: [22m[34m7[39m"
+"2","[36m──[39m [1mColumn specification[22m [36m────────────────────────────────────────────────────────────────────────────[39m
+[1mDelimiter:[22m ""\t""
+[31mchr[39m (3): X1, X3, X7
+[32mdbl[39m (4): X2, X4, X5, X6"
+"2","
+[36mℹ[39m Use `spec()` to retrieve the full column specification for this data.
+[36mℹ[39m Specify the column types or set `show_col_types = FALSE` to quiet this message."

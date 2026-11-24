@@ -1,0 +1,29 @@
+{
+    "id": "93E2D6E1",
+    "path": "/Volumes/TOSHIBA/OrCA-seq_slurm/OrCA-seq-processing/scripts/R_analysis/kaplan_meier_for_barcode_seq_depth.Rmd",
+    "project_path": "kaplan_meier_for_barcode_seq_depth.Rmd",
+    "type": "r_markdown",
+    "hash": "0",
+    "contents": "",
+    "dirty": true,
+    "created": 1791989196634.0,
+    "source_on_save": false,
+    "relative_order": 2,
+    "properties": {
+        "tempName": "Untitled1",
+        "chunk_output_type": "inline",
+        "source_window_id": "",
+        "Source": "Source",
+        "cursorPosition": "112,27",
+        "scrollLine": "74",
+        "last_setup_crc32": "cd0ec488de58d789"
+    },
+    "folds": "",
+    "lastKnownWriteTime": 1791990222,
+    "encoding": "UTF-8",
+    "collab_server": "",
+    "source_window": "",
+    "last_content_update": 1791990399250,
+    "read_only": false,
+    "read_only_alternatives": []
+}

@@ -1,0 +1,11 @@
+"0","all_BLAST_barcodes_taxonomy_lca %>%"
+"0","     group_by(sample, primer_barcode) %>%"
+"0","     summarize(n_contigs = n(), .groups = ""drop"") %>%"
+"0","     group_by(primer_barcode) %>%"
+"0","     summarize(mean_contigs = mean(n_contigs),"
+"0","               median_contigs = median(n_contigs)) %>% kable()"
+"1","[1m[33mError[39m in `group_by()`:[22m
+[38;5;232m[33m![38;5;232m Must group by variables found in `.data`.
+[31m✖[38;5;232m Column `primer_barcode` is not found.[39m
+[90mRun `]8;;x-r-run:rlang::last_trace()rlang::last_trace()]8;;` to see where the error occurred.[39m
+"
