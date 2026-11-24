@@ -348,10 +348,11 @@ scripts/R_analysis/plots/*pdf
 # misc files for R analysis 
 scripts/R_analysis/accessionTaxa.sql
 # snakemake
-input_reads/
+input_reads*/
 scripts/auxiliary_code/amplicon_sorter.py
 .snakemake
 results*/
 pychopper.pdf
 report.html
 runtimes.json
+review_address/
