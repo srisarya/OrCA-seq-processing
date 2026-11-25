@@ -7,15 +7,17 @@ A Snakemake-based workflow for processing COI/28S/18S amplicon data locally!
 - **Snakemake**: ≥7.0
 - **Python**: 3.8+
 - **Conda/Mamba**: Required
-- **Tested on**: MacBook Pro M3 (8 cores, 16GB RAM)
+- **Tested on**:
+   - MacBook Pro M3 (8 cores, 16GB RAM)
+   - HPC interactive job (16 cores, 24GB RAM)
 
 ## Workflow Steps
 
-1. **Pychopper** (01): Reorient cDNA reads and quality trim
-2. **Cutadapt (SP5/SP27)** (02): Two-round demultiplexing by adapter indices
-3. **Amplicon Sorter** (03): Cluster reads by sequence similarity and filter by size
-4. **Primer Removal** (04): Strip 5'/3' primers from amplicon sequences
-5. **Pybarrnap/Reorganize** (05): Extract rRNA genes or reorganize COIs
+1 & 2. **Barbell**: Reorient cDNA reads, quality trim, and remove indexing primers, plus extra filtering to remove reads with aberrant partial indexing primer segments
+3. **Amplicon Sorter**: Cluster reads by sequence similarity and filter by size
+4. **Primer Removal**: Strip 5'/3' primers from amplicon sequences
+5. **Pybarrnap/Reorganize**: Extract rRNA genes or reorganize COIs
+6. **BLAST**: BLAST search against NR v5 (25th May, 2025), either with blastn for rRNA barcodes or tblastx for COI barcodes
 
 ## Setup
 
@@ -54,14 +56,17 @@ A Snakemake-based workflow for processing COI/28S/18S amplicon data locally!
    ├── configs/
    │   └── config_for_dataset.yaml
    ├── envs/
-   │   ├── pychopper.yaml
+   │   ├── barbell.yaml
+   |   ├── barbell.post-deploy.sh # since barbell installation is more robust with rust through cargo
    │   ├── cutadapt.yaml
    │   ├── amplicon_sorter.yaml
+   │   ├── blast.yaml
    │   └── pybarrnap.yaml
    ├── adapters_primers/
    ├── scripts/
    │   ├── auxiliary_code/
-   │   │   └── amplicon_sorter.py
+   │   │   ├── amplicon_sorter.py
+   │   │   └── make_filters.py # generate barbell filters.txt from `barbell inspect` output.
    │   └── ...
    └── input_reads/        # Your FASTQ files here
    ```
@@ -87,12 +92,12 @@ In this study the dataset configs are in configs/
 
 2. **Dry-run the workflow with default config:**
    ```bash
-   snakemake -s OrCAseq_processing.smk --use-conda --configfile configs/config_Lakesday1.yaml --dry-run
+   snakemake -s OrCAseq_processing.smk --use-conda --configfile configs/config_all_experimental_data.yaml --dry-run
    ```
 
 3. **Run the protocol with 6 threads if the summary looks right**
    ```bash
-   snakemake -s OrCAseq_processing.smk -c 6 --use-conda --configfile configs/config_Lakesday1.yaml
+   snakemake -s OrCAseq_processing.smk -c 6 --use-conda --configfile configs/config_all_experimental_data.yaml
    ```
    
 - **Options:**
@@ -106,36 +111,59 @@ In this study the dataset configs are in configs/
 ## Output Structure (summary)
 
 ```
-results/
-├── pychopped/
-│   └── {sample}_pass.fastq.gz
-├── demuxed/
-│   ├── SP5/{sample}/{SP5_id}_{DATASET_NAME}.fastq.gz
-│   └── SP27/{sample}/{combo}_{DATASET_NAME}.fastq.gz      # combo = SP27_xxx_SP5_yyy
-├── amplicon_sorted/
-│   └── {sample}/{combo}/
-│       ├── rRNAs/{combo}_consensus_rRNAs.fasta
-│       └── COIs/{combo}_consensus_COIs.fasta
-├── primerless/
-│   └── {sample}/{combo}/
-│       ├── rRNAs/cleaned_amplicon_{combo}.fasta
-│       └── COIs/cleaned_amplicon_{combo}.fasta
-├── rRNA_genes/
-│   └── {sample}/
-│       ├── {combo}_18S.fa
-│       └── {combo}_28S.fa
-├── COI_gene/
-│   └── {sample}/
-│       └── {combo}_COI.fasta
-├── failures/
-    └── failures.tsv
-└── logs/
-    ├── pychopper_{sample}.log
-    ├── cutadapt_sp5_{sample}.log
-    ├── cutadapt_sp27_{sample}.log
-    ├── amplicon_sorter_{sample}_{combo}.log
-    ├── primer_removal_{sample}_{combo}_{amplicon_type}.log
-    └── pybarrnap_{sample}_{combo}.log
+results_NTC_barbell_M13filt_3mm/                                                                                                                      
+├── amplicon_sorted
+│   └── <sample>
+│       └── SP27_NNN_SP5_NNN
+│           ├── COIs
+│               ├── results.csv
+│               ├── SP27_NNN_SP5_NNN_consensus_COIs.fasta
+│               └── SP27_NNN_SP5_NNN_NTC_exp/
+|               ...
+│           └── rRNAs
+│               ├── results.csv
+│               ├── SP27_NNN_SP5_NNN_consensus_rRNAs.fasta
+│               └── SP27_NNN_SP5_NNN_NTC_exp/
+|               ...
+├── barbell
+│   └── <sample>
+│       ├── annotate.log
+│       ├── annotate.tsv
+│       ├── filtered.tsv
+│       ├── filters.txt
+│       ├── m13_filter_summary.tsv
+│       ├── patterns.txt
+│       └── demuxed
+|           ├── SP27_NNN_SP5_NNN_NTC_exp.fastq.gz
+|           ...
+├── BLAST
+│   ├── <sample>
+|       ├── SP27_NNN_SP5_NNN_<barcode>_blast_top5.tsv
+|       ...
+├── COI_gene
+│   └── <sample>
+│       ├── SP27_NNN_SP5_001_NNN_COI.fasta
+├── primerless
+│   └── <sample>
+│       └── SP27_NNN_SP5_NNN
+│           ├── COIs
+│               ├── round1_amplicon_SP27_NNN_SP5_NNN.fasta
+│               └── cleaned_amplicon_SP27_NNN_SP5_NNN.fasta
+|               ...
+│           └── rRNAs
+│               ├── round1_amplicon_SP27_NNN_SP5_NNN.fasta
+│               └── cleaned_amplicon_SP27_NNN_SP5_NNN.fasta
+|               ...
+├── rRNA_genes
+│   └── <sample>
+│       ├── SP27_NNN_SP5_001_NNN_18S.fa
+│       ├── SP27_NNN_SP5_001_NNN_28S.fa
+│       ...
+├── failures
+│   └── failures.tsv
+├── logs
+│   ├── <rule>_<sample>_<adapter_combo>.log
+...
 ```
 - `failures.tsv` is a tab-separated file of the stages and amplicons yielding no results OR failing
    - it's good to look at this as the workflow runs to check if something is wrong
@@ -143,23 +171,7 @@ results/
 
 ## Performance on MacBook Pro M3
 
-Estimated runtime for ~2.6M reads in the raw dataset (Lakes Day 1 data, 4.4G, from the NHM training workshop in Ambleside)
-
-| Step | Mean compute time across all jobs | Sum compute time for all jobs | Notes |
-| --- | --- | --- | --- |
-| Pychopper | ~30 min | ~30 min | I/O bound, ~4 threads |
-| Cutadapt SP5 | ~10 min | ~10 min | Fast demultiplexing |
-| Cutadapt SP27 | ~5 min | ~5 min | Per-adapter loop |
-| Amplicon Sorter | ~20 min | ~72 h | See below |
-| Primer Removal | ~1 second | ~4 min | We use the round 1 trimming only |
-| Pybarrnap | ~1 second | ~3 min | Covariance model search for rRNAs |
-| COI reorganisation | milliseconds | ~2 seconds | Just moving files |
-
-* After demultiplexing, you will have MANY samples to run! 
-* While the amplicon_sorter rule runs reasonably fast, it has a lot to get through.
-* With multithreading, it does not take the whole 72h!!!!
-* I ran this with 6 cores and 2 cores per job, so it took 72/3=24h to finish amplicon sorting
-* Total run time was 1 day, 56 minutes, 8.21 seconds
+TBC!
 
 ## Memory Considerations
 
@@ -187,7 +199,7 @@ snakemake {rule_name} -c 6 --use-conda
 ### Force re-run of failed steps
 
 ```bash
-snakemake -c 6 --use-conda --rerun-incomplete --rerun-all
+snakemake -c 6 --use-conda --rerun-incomplete
 ```
 
 ### Generate reports (fun)
@@ -207,12 +219,13 @@ snakemake -c 8 --use-conda  # M3 has 8 cores total
 ```bash
 snakemake -c 4 --rerun-incomplete
 ```
-(Assumes `pychopper`, `cutadapt`, etc. are in your PATH)
+(Assumes tools, etc. are in your PATH. Not advised, since the version of the tool will be static)
 
 ## Notes
 
 - **Adapter sequences** must match your exact wet-lab protocol. Check `adapters_primers/` files.
-- **Primer sequences** in config should be 5'→3' orientation. Use `seqkit seq -r` to reverse-complement if needed before using.
+- **Primer sequences** should be 5'→3' orientation. Use `seqkit seq -r` to reverse-complement if needed before using.
+- **M13 sequences** are provided in both orientations so the search doesn't go for 'both' strands, but searches all options. 
 - **Size filters** (min/max amplicon size) are optional but recommended for specificity.
 - **Multiple dataset runs** can be done in separate directories using different configs.
 - The workflow is **idempotent**: re-running with `--rerun-incomplete` will skip completed steps.

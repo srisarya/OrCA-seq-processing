@@ -1,0 +1,829 @@
+---
+title: "Assessing negative controls and COI PCR annealing temperatures"
+date: "`r format(Sys.time(), '%d %B, %Y')`"
+output:
+  html_document:
+    toc: true
+    df_print: paged
+    code_fold: show
+---
+
+# setup
+
+```{r setup}
+library(tidyverse)
+library(readr)
+library(scales)
+library(ggplot2)
+library(ggbeeswarm)
+library(ggforce)
+library(ggrepel)
+library(ggpubr)
+library(ggalluvial)
+library(paletteer)
+library(rstatix)
+
+knitr::opts_chunk$set(
+	echo = TRUE,
+	message = FALSE,
+	warning = FALSE
+)
+options(scipen = 999)
+```
+
+-   Negative adapter combinations are labelled NC. These are:
+
+    -   SP27_001_SP5_001
+
+    -   SP27_001_SP5_009
+
+    -   SP27_002_SP5_002
+
+    -   SP27_002_SP5_010
+
+    -   SP27_003_SP5_003
+
+    -   SP27_003_SP5_011
+
+    -   SP27_004_SP5_004
+
+    -   SP27_004_SP5_012
+
+    -   SP27_005_SP5_005
+
+    -   SP27_006_SP5_006
+
+    -   SP27_007_SP5_007
+
+    -   SP27_008_SP5_007
+
+    -   SP27_008_SP5_008
+
+-   Two datasets are assessed here:
+
+    -   `NTC_exp`: This has all amplicons + an annealing temp of 54°C
+
+    -   `COI_47`: This has only COI amplicons + an annealing temp of 47°C
+
+# Negative control read and contig counts
+
+-   Only `NTC_exp`
+
+## Reading in the data
+
+-   this is basic seqkit stats for the read counts in demultiplexed bins, and also for the contigs assembled from the reads in each well
+
+-   NB: I have *not* split between Moorea and Sauron for COI
+
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+reads_at_demux<-
+  read_csv("review_address/negative_control_test/NTC_seqkit_stats.csv")
+
+rRNAs<-
+  read_csv("review_address/negative_control_test/NTC_seqkit_stats_rRNA.csv") %>%
+  dplyr::mutate(gene = paste0(gene, "S"))
+
+COIs<-
+  read_csv("review_address/negative_control_test/NTC_seqkit_stats_COI.csv")
+
+
+gene_nc_ids <- c(
+  "SP27_001_SP5_001", "SP27_001_SP5_009",
+  "SP27_002_SP5_002", "SP27_002_SP5_010",
+  "SP27_003_SP5_003", "SP27_003_SP5_011",
+  "SP27_004_SP5_004", "SP27_004_SP5_012",
+  "SP27_005_SP5_005","SP27_006_SP5_006",
+  "SP27_007_SP5_007","SP27_008_SP5_007", 
+  "SP27_008_SP5_008"
+)
+
+barbell_whole_index <-
+  read_tsv("review_address/negative_control_test/stats_M13_1mm_barbell_demux.tsv") %>%
+  dplyr::mutate(
+    type = ifelse(grepl(paste(gene_nc_ids, collapse = "|"), file), "NC", "Sample"),
+    file = str_remove(file, "barbell/NTC_exp/demuxed/"),
+    file = str_remove(file, "_NTC_exp.fastq.gz"),
+    file = str_replace(file, "__", "_")
+  )
+
+barbell_rRNAs<-
+  read_tsv("review_address/negative_control_test/stats_M13_1mm_barbell_rRNA.tsv") %>% 
+  dplyr::mutate(
+    type = ifelse(grepl(paste(gene_nc_ids, collapse = "|"), file), "NC", "Sample"),
+    gene = str_extract(file, "18S|28S"),
+    file = gsub("rRNA_genes/NTC_exp/", "", file),
+    file = str_remove(file, "_18S.fa | _28S.fa" )
+  )
+
+barbell_COIs<-
+  read_tsv("review_address/negative_control_test/stats_M13_1mm_barbell_COI.tsv") %>% 
+    dplyr::mutate(
+    type = ifelse(grepl(paste(gene_nc_ids, collapse = "|"), file), "NC", "Sample"),
+    file = gsub("COI_gene/NTC_exp/", "", file),
+    file = str_remove(file, "_COI.fasta" )
+  )
+```
+
+## Examining the differences between NC and samples
+
+-   Here is a density plot
+
+-   It does transform counts but the alpha (transparency) allows visualisation and patterns clearly
+
+```{r}
+reads_at_demux %>%
+  ggplot(aes(x = num_seqs,
+             fill = type))+
+  geom_density(alpha = 0.5)+
+  scale_fill_paletteer_d("nbapalettes::sixers_retro")+
+  labs(title = "pychopper-cutadapt demux")+
+  theme_minimal()
+
+barbell_whole_index %>% 
+  ggplot(aes(x = num_seqs, 
+             fill = type))+
+  geom_density(alpha = 0.5)+
+  scale_fill_paletteer_d("nbapalettes::sixers_retro")+
+  labs(title = "barbell demux + remove reads with M13 tags")+
+  theme_minimal()
+
+rRNAs%>%
+  ggplot(aes(x = num_seqs,
+             fill = type))+
+  geom_density(alpha = 0.5)+
+  facet_wrap(~gene)+
+  scale_fill_paletteer_d("nbapalettes::sixers_retro")+
+  labs(title = "rRNA (pychopper-cutadapt)")+
+  theme_minimal()
+
+barbell_rRNAs%>% 
+  ggplot(aes(x = num_seqs, 
+             fill = type))+
+  geom_density(alpha = 0.5)+
+  facet_wrap(~gene)+
+  scale_fill_paletteer_d("nbapalettes::sixers_retro")+
+  labs(title = "rRNA (barbell)")+
+  theme_minimal()
+
+COIs%>%
+  ggplot(aes(x = num_seqs,
+             fill = type))+
+  geom_density(alpha = 0.5)+
+  scale_fill_paletteer_d("nbapalettes::sixers_retro")+
+  labs(title = "COI (pychopper-cutadapt)")+
+  theme_minimal()
+
+barbell_COIs%>% 
+  ggplot(aes(x = num_seqs, 
+             fill = type))+
+  geom_density(alpha = 0.5)+
+  scale_fill_paletteer_d("nbapalettes::sixers_retro")+
+  labs(title = "COI (barbell)")+
+  theme_minimal()
+```
+
+### Scatter plots (my favourite for this analysis)
+
+-   The above are nice but it's easier to label outliers with a scatter/point plot.
+
+-   With this I can more easily see which samples are problematic, and also calculate significance
+
+-   I'm going with a Wilcox test (over an unpaired T-test) since I cannot assume normal distribution of the counts of contigs (or reads in the case of read demux)
+
+-   I considered a Bonferroni correction for false positives (few tests done) but since the p-values for significant results is so low it would cause little effect. I'm also not (in this case) comparing between genes, but comparing between states (NC vs sample).
+
+```{r message=FALSE, warning=FALSE}
+reads_at_demux %>%
+  as.data.frame() %>%
+  dplyr::mutate(label= ifelse(type == "NC" & num_seqs > 10000, file, NA)) %>%
+  ggplot(aes(x = type,
+             y = num_seqs,
+             color = type,
+             label = label))+
+  geom_point(size = 0.75)+
+  scale_color_paletteer_d("nbapalettes::sixers_retro")+
+  theme_minimal()+
+  geom_text(size = 3, check_overlap = TRUE, nudge_y = 1.2, vjust = 0)+
+  labs(title = "pychopper-cutadapt demux")+
+  coord_cartesian(ylim = c(0,300000))+
+  stat_compare_means(method = "wilcox.test",
+                     label = "p.signif",
+                     paired = FALSE,
+                     comparisons = list(c("NC", "sample")),
+                     label.y = 275000)
+
+barbell_whole_index %>% 
+  as.data.frame() %>% 
+  dplyr::mutate(label= ifelse(type == "NC" & num_seqs > 10000, file, NA)) %>% 
+  ggplot(aes(x = type, 
+             y = num_seqs, 
+             color = type,
+             label = label))+
+  geom_violin(trim = F)+
+  geom_point(size = 0.75)+
+  labs(title = "barbell demux + remove reads with M13 tags")+
+  scale_color_paletteer_d("nbapalettes::sixers_retro")+
+  theme_minimal()+
+  geom_text(size = 3, check_overlap = TRUE, nudge_y = 1.2, vjust = 0)+
+  coord_cartesian(ylim = c(0,300000))+
+  stat_compare_means(method = "wilcox.test", 
+                     label = "p.signif", 
+                     paired = FALSE,
+                     comparisons = list(c("NC", "Sample")))
+
+rRNAs %>%
+  as.data.frame() %>%
+  dplyr::mutate(label= ifelse(type == "NC" & num_seqs > 5, file, NA)) %>%
+  ggplot(aes(x = type,
+             y = num_seqs,
+             color = type,
+             label = label))+
+  geom_point(size = 0.75)+
+  facet_wrap(~gene)+
+  scale_color_paletteer_d("nbapalettes::sixers_retro")+
+  theme_minimal()+
+  labs(title = "rRNA pychopper-cutadapt")+
+  geom_text(size = 3, check_overlap = TRUE, nudge_y = 0.5, vjust = 0)+
+  stat_compare_means(method = "wilcox.test",
+                     label = "p.signif",
+                     paired = FALSE,
+                     comparisons = list(c("NC", "sample")),
+                     label.y = 14)
+
+barbell_rRNAs %>%
+  as.data.frame() %>% 
+  dplyr::mutate(label= ifelse(type == "NC" & num_seqs > 5, file, NA)) %>% 
+  ggplot(aes(x = type, 
+             y = num_seqs, 
+             color = type,
+             label = label))+
+  geom_violin(trim = F)+
+  geom_point(size = 0.75)+
+  facet_wrap(~gene)+
+  scale_color_paletteer_d("nbapalettes::sixers_retro")+
+  theme_minimal()+
+  labs(title = "rRNA barbell")+
+  geom_text(size = 3, check_overlap = TRUE, nudge_y = 0.5, vjust = 0)+
+  stat_compare_means(method = "wilcox.test", 
+                     label = "p.signif", 
+                     paired = FALSE,
+                     comparisons = list(c("NC", "Sample")), 
+                     label.y = 14)
+
+COIs%>%
+  as.data.frame() %>%
+  dplyr::mutate(label= ifelse(type == "NC" & num_seqs > 10, file, NA)) %>%
+  ggplot(aes(x = type,
+             y = num_seqs,
+             color = type,
+             label = label))+
+  scale_color_paletteer_d("nbapalettes::sixers_retro")+
+  geom_point()+
+  theme_minimal()+
+  labs(title = "COI pychopper-cutadapt")+
+  geom_text(size = 3, check_overlap = TRUE, nudge_y = 0.75, vjust = 0)+
+  stat_compare_means(method = "wilcox.test",
+                     label = "p.signif",
+                     paired = FALSE,
+                     comparisons = list(c("NC", "sample")),
+                     label.y = 25)
+
+barbell_COIs%>% 
+  as.data.frame() %>% 
+  dplyr::mutate(label= ifelse(type == "NC" & num_seqs > 10, file, NA)) %>% 
+  ggplot(aes(x = type, 
+             y = num_seqs, 
+             color = type,
+             label = label))+
+  scale_color_paletteer_d("nbapalettes::sixers_retro")+
+  geom_violin(trim = F)+
+  geom_point()+
+  theme_minimal()+
+  labs(title = "COI barbell")+
+  geom_text(size = 3, check_overlap = TRUE, nudge_y = 1, nudge_x = 0.3)+
+  stat_compare_means(method = "wilcox.test", 
+                     label = "p.signif", 
+                     paired = FALSE,
+                     comparisons = list(c("NC", "Sample")), 
+                     label.y = 25)
+
+```
+
+### Some notes on Statistics
+
+-   We noted that SP27_001_SP5_001 (well A1) is consistently causing issues in the pychopper-cutadapt approach, but we did not know why.
+
+-   Here are the statistics just as data frames
+
+```{r eval=FALSE, message=FALSE, warning=FALSE, include=FALSE}
+reads_at_demux %>%
+  wilcox_test(num_seqs ~ type) %>%
+  add_significance("p")
+
+barbell_whole_index %>% 
+  wilcox_test(num_seqs ~ type) %>% 
+  add_significance("p")
+
+rRNAs %>%
+  group_by(gene) %>%
+  wilcox_test(num_seqs ~ type) %>%
+  add_significance("p")
+
+barbell_rRNAs %>% 
+  group_by(gene) %>% 
+  wilcox_test(num_seqs ~ type) %>% 
+  add_significance("p")
+
+COIs %>%
+  wilcox_test(num_seqs ~ type) %>%
+  add_significance("p")
+
+barbell_COIs %>% 
+  wilcox_test(num_seqs ~ type) %>% 
+  add_significance("p")
+```
+
+## Interim conclusion
+
+-   There is a visual difference between NC and sample
+
+-   The difference between NC and Sample is statistically significant too: completely when using barbell, and missing COI using pychopper-cutadapt, but for one sample.
+
+    -   SP27_001_SP5_001 is an outlier
+
+## From where do NC contigs source?
+
+-   Specifically, we want to disentangle the source of SP27_001_SP5_001, but there are other contigs too we should follow up.
+
+-   For this analysis, I made vsearch databases out of the sample contigs...\
+    `vsearch --makeudb_usearch sample_wells_COI.fa --output COI_samples_vsearchdb`
+
+-   ... and did a 97% identity `--usearch_global` search ...\
+    `vsearch --usearch_global NC_wells_COI.fa --db COI_samples_vsearchdb --id 0.97 --top_hits_only --blast6out COI_vsearch_blast.tsv`
+
+-   Below are the `blast outfmt 6` style results viewed
+
+```{r message=FALSE, warning=FALSE}
+read_vsearch_blast <- function(path) {
+  read_tsv(path, col_names = FALSE) %>% 
+  dplyr::rename(qseqid = X1,
+                sseqid = X2,
+                pident = X3,
+                length = X4,
+                mismatch = X5,
+                gapopen = X6,
+                qstart = X7, 
+                qend = X8,
+                sstart= X9,
+                send = X10,
+                evalue = X11,
+                bitscore = X12) %>% 
+  dplyr::select(-gapopen, -mismatch, -evalue, -bitscore) %>% 
+  dplyr::mutate(NC = str_extract(qseqid, "SP27_[0-9]+_SP5_[0-9]+"),
+                Sample = str_extract(sseqid, "SP27_[0-9]+_SP5_[0-9]+"),
+                match_sample = ifelse(NC == Sample, T, F))
+}
+
+COI_vsearch <- read_vsearch_blast("review_address/negative_control_test/COI_vsearch_blast.tsv")
+
+rRNA_vsearch <- read_vsearch_blast("review_address/negative_control_test/rRNA_vsearch_blast.tsv") %>%
+  dplyr::mutate(gene = str_extract(qseqid, "18S|28S"))
+
+barbell_COI_vsearch <- read_vsearch_blast("review_address/negative_control_test/COI_vsearch_barbell_M13_1mm_97.tsv")
+
+barbell_rRNA_vsearch <- read_vsearch_blast("review_address/negative_control_test/rRNA_vsearch_barbell.tsv") %>%
+  dplyr::mutate(gene = str_extract(qseqid, "18S|28S"))
+```
+
+## Tiling the sources of contamination
+
+-   COIs
+
+    -   in pychopper-cutadapt: As we know, there are 23 COI contigs in SP27_001_SP5_001, which is *supposed* to be NC
+
+    -   These seem to come from all across the plate row-wise (SP5 indices), but column-wise it appears to be focused on SP27_001 (column 1)
+
+-   rRNAs
+
+    -   Negative control contigs only have matches in SP27_001 for the samples
+
+```{r}
+COI_vsearch %>%
+  count(NC, Sample, match_sample) %>%
+  mutate(n = factor(n)) %>%
+  ggplot(aes(Sample, NC, fill = n)) +
+  geom_tile(linewidth = 0.8) +
+  geom_text(aes(label = n), size = 3, color = "white") +
+  scale_fill_paletteer_d("MoMAColors::Althoff", name = "hits")+
+  theme_minimal(base_size = 18) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1),
+        panel.grid = element_blank())+
+labs(title = "COIs (pychopper-cutadapt)")
+
+barbell_COI_vsearch %>% 
+  count(NC, Sample, match_sample) %>% 
+  mutate(n = factor(n)) %>% 
+  ggplot(aes(Sample, NC, fill = n)) +
+  geom_tile(linewidth = 0.8) +
+  geom_text(aes(label = n), size = 3, color = "white") +
+  scale_fill_paletteer_d("MoMAColors::Althoff", name = "hits")+
+  theme_minimal(base_size = 12) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1),
+        panel.grid = element_blank())+
+labs(title = "COIs (barbell)")
+
+
+rRNA_vsearch %>%
+  count(NC, Sample, match_sample, gene) %>%
+  mutate(n = factor(n)) %>%
+  ggplot(aes(Sample, NC, fill = n)) +
+  geom_tile(linewidth = 0.8) +
+  geom_text(aes(label = n), size = 3, color = "white") +
+  scale_fill_paletteer_d("MoMAColors::Althoff", name = "hits")+
+  facet_wrap(~gene, ncol = 1)+
+  theme_minimal(base_size = 18) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1),
+        panel.grid = element_blank())+
+labs(title = "rRNAs (pychopper-cutadapt)")
+
+barbell_rRNA_vsearch %>%
+  count(NC, Sample, match_sample, gene) %>%
+  mutate(n = factor(n)) %>%
+  ggplot(aes(Sample, NC, fill = n)) +
+  geom_tile(linewidth = 0.8) +
+  geom_text(aes(label = n), size = 3, color = "white") +
+  scale_fill_paletteer_d("MoMAColors::Althoff", name = "hits")+
+  facet_wrap(~gene, ncol = 1)+
+  theme_minimal(base_size = 18) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1),
+        panel.grid = element_blank())+
+labs(title = "rRNAs (barbell)")
+
+```
+
+## Visualising contamination in a plate map format
+
+```{r}
+plate <- read_csv("review_address/negative_control_test/NTC_seqkit_stats.csv") %>%
+  dplyr::mutate(well = str_extract(file, "SP27_[0-9]+_SP5_[0-9]+")) %>%
+  distinct(well, type) %>%
+  mutate(row = as.integer(str_extract(well, "(?<=SP27_)[0-9]+")),
+         col = as.integer(str_extract(well, "(?<=SP5_)[0-9]+")))
+
+# COI
+plate %>%
+  left_join(count(COI_vsearch, Sample), by = c("well" = "Sample")) %>%
+  mutate(n = factor(n)) %>%
+  ggplot(aes(col, row, fill = n)) +
+  geom_tile(colour = "white", linewidth = 0.5) +
+  geom_tile(data = ~ filter(.x, type == "NC"), fill = NA, colour = "black", linewidth = 0.8) +
+  geom_text(aes(label = n), size = 3, colour = "white", na.rm = TRUE) +
+  scale_fill_paletteer_d("MoMAColors::Althoff", name = "hits", na.value = "grey92") +
+  scale_x_continuous(breaks = 1:12, position = "top", expand = c(0, 0)) +
+  scale_y_reverse(breaks = 1:8, expand = c(0, 0)) +
+  coord_fixed() +
+  labs(x = "SP5 (col)", y = "SP27 (row)", title = "COIs (pychopper-cutadapt)") +
+  theme_minimal() +
+  theme(panel.grid = element_blank())
+
+plate %>%
+  left_join(count(barbell_COI_vsearch, Sample), by = c("well" = "Sample")) %>%
+  mutate(n = factor(n)) %>%
+  ggplot(aes(col, row, fill = n)) +
+  geom_tile(colour = "white", linewidth = 0.5) +
+  geom_tile(data = ~ filter(.x, type == "NC"), fill = NA, colour = "black", linewidth = 0.8) +
+  geom_text(aes(label = n), size = 3, colour = "white", na.rm = TRUE) +
+  scale_fill_paletteer_d("MoMAColors::Althoff", name = "hits", na.value = "grey92") +
+  scale_x_continuous(breaks = 1:12, position = "top", expand = c(0, 0)) +
+  scale_y_reverse(breaks = 1:8, expand = c(0, 0)) +
+  coord_fixed() +
+  labs(x = "SP5 (col)", y = "SP27 (row)", title = "COIs (barbell)") +
+  theme_minimal() +
+  theme(panel.grid = element_blank())
+
+plate %>%
+  left_join(count(barbell_COI_vsearch, NC), by = c("well" = "NC")) %>%
+  mutate(n = factor(n)) %>%
+  ggplot(aes(col, row, fill = n)) +
+  geom_tile(colour = "white", linewidth = 0.5) +
+  geom_tile(data = ~ filter(.x, type == "NC"), fill = NA, colour = "black", linewidth = 0.8) +
+  geom_text(aes(label = n), size = 3, colour = "white", na.rm = TRUE) +
+  scale_fill_paletteer_d("MoMAColors::Althoff", name = "hits", na.value = "grey92") +
+  scale_x_continuous(breaks = 1:12, position = "top", expand = c(0, 0)) +
+  scale_y_reverse(breaks = 1:8, expand = c(0, 0)) +
+  coord_fixed() +
+  labs(x = "SP5 (col)", y = "SP27 (row)", title = "COIs (barbell but plotting NC)") +
+  theme_minimal() +
+  theme(panel.grid = element_blank())
+
+
+# rRNA: one plate per gene
+expand_grid(gene = c("18S", "28S"), plate) %>%
+  left_join(count(rRNA_vsearch, Sample, gene), by = c("well" = "Sample", "gene")) %>%
+  mutate(n = factor(n)) %>%
+  ggplot(aes(col, row, fill = n)) +
+  geom_tile(colour = "white", linewidth = 0.5) +
+  geom_tile(data = ~ filter(.x, type == "NC"), fill = NA, colour = "black", linewidth = 0.8) +
+  geom_text(aes(label = n), size = 3, colour = "white", na.rm = TRUE) +
+  scale_fill_paletteer_d("MoMAColors::Althoff", name = "hits", na.value = "grey92") +
+  scale_x_continuous(breaks = 1:12, position = "top", expand = c(0, 0)) +
+  scale_y_reverse(breaks = 1:8, expand = c(0, 0)) +
+  coord_fixed() +
+  facet_wrap(~gene) +
+  labs(x = "SP5 (col)", y = "SP27 (row)", title = "rRNAs (pychopper-cutadapt)") +
+  theme_minimal() +
+  theme(panel.grid = element_blank())
+
+expand_grid(gene = c("18S", "28S"), plate) %>%
+  left_join(count(barbell_rRNA_vsearch, Sample, gene), by = c("well" = "Sample", "gene")) %>%
+  mutate(n = factor(n)) %>%
+  ggplot(aes(col, row, fill = n)) +
+  geom_tile(colour = "white", linewidth = 0.5) +
+  geom_tile(data = ~ filter(.x, type == "NC"), fill = NA, colour = "black", linewidth = 0.8) +
+  geom_text(aes(label = n), size = 3, colour = "white", na.rm = TRUE) +
+  scale_fill_paletteer_d("MoMAColors::Althoff", name = "hits", na.value = "grey92") +
+  scale_x_continuous(breaks = 1:12, position = "top", expand = c(0, 0)) +
+  scale_y_reverse(breaks = 1:8, expand = c(0, 0)) +
+  coord_fixed() +
+  facet_wrap(~gene) +
+  labs(x = "SP5 (col)", y = "SP27 (row)", title = "rRNAs (barbell)") +
+  theme_minimal() +
+  theme(panel.grid = element_blank())
+
+expand_grid(gene = c("18S", "28S"), plate) %>%
+  left_join(count(barbell_rRNA_vsearch, NC, gene), by = c("well" = "NC", "gene")) %>%
+  mutate(n = factor(n)) %>%
+  ggplot(aes(col, row, fill = n)) +
+  geom_tile(colour = "white", linewidth = 0.5) +
+  geom_tile(data = ~ filter(.x, type == "NC"), fill = NA, colour = "black", linewidth = 0.8) +
+  geom_text(aes(label = n), size = 3, colour = "white", na.rm = TRUE) +
+  scale_fill_paletteer_d("MoMAColors::Althoff", name = "hits", na.value = "grey92") +
+  scale_x_continuous(breaks = 1:12, position = "top", expand = c(0, 0)) +
+  scale_y_reverse(breaks = 1:8, expand = c(0, 0)) +
+  coord_fixed() +
+  facet_wrap(~gene) +
+  labs(x = "SP5 (col)", y = "SP27 (row)", title = "rRNAs (barbell but plotting NC)") +
+  theme_minimal() +
+  theme(panel.grid = element_blank())
+```
+
+## A hypothesis about M13 tags
+
+-   One hypothesis we have is that there's hopping due to a partial (or complete) indexing primer dimer at the M13 region, resulting in \>1 M13 sequence present in contigs
+
+-   This explains why barbell does a better job than pychopper+cutadapt
+
+-   We next searched for M13 sequences present in reads after initial barbell demultiplexing, to see if this was the case
+
+```{r message=FALSE, warning=FALSE}
+read_tsv("review_address/negative_control_test/M13_in_demux_seqkit_locate_0mm.tsv") %>%
+  dplyr::mutate(file = gsub("_NTC_exp.fastq.gz", "", file)) %>% 
+  left_join(barbell_whole_index) %>% 
+  ggplot(aes(x = motif, y = count, color = type))+
+  geom_violin()+
+  geom_jitter()+
+  scale_color_paletteer_d("nbapalettes::sixers_retro")+
+  facet_wrap(~type)+
+  theme_minimal()+
+  labs(title = "bfg exact counts")
+
+read_tsv("review_address/negative_control_test/M13_in_demux_seqkit_locate_1mm.tsv") %>%
+  dplyr::mutate(file = gsub("_NTC_exp.fastq.gz", "", file)) %>% 
+  left_join(barbell_whole_index) %>% 
+  ggplot(aes(x = motif, y = count, color = type))+
+  geom_violin()+
+  geom_jitter()+
+  scale_color_paletteer_d("nbapalettes::sixers_retro")+
+  facet_wrap(~type)+
+  theme_minimal()+
+  labs(title = "seqkit locate 1 mismatch")
+
+read_tsv("review_address/negative_control_test/M13_in_demux_seqkit_locate_2mm.tsv") %>%
+  dplyr::mutate(file = gsub("_NTC_exp.fastq.gz", "", file)) %>% 
+  left_join(barbell_whole_index) %>% 
+  ggplot(aes(x = motif, y = count, color = type))+
+  geom_violin()+
+  #geom_jitter()+
+  scale_color_paletteer_d("nbapalettes::sixers_retro")+
+  facet_wrap(~type)+
+  theme_minimal()+
+  labs(title = "M13 seqkit locate 2 mismatch")
+
+read_tsv("review_address/negative_control_test/M13_in_demux_seqkit_locate_3mm.tsv") %>%
+  dplyr::mutate(file = gsub("_NTC_exp.fastq.gz", "", file)) %>% 
+  left_join(barbell_whole_index) %>% 
+  ggplot(aes(x = motif, y = count, color = type))+
+  geom_violin()+
+  geom_jitter()+
+  scale_color_paletteer_d("nbapalettes::sixers_retro")+
+  facet_wrap(~type)+
+  theme_minimal()+
+  labs(title = "seqkit locate 3 mismatch")
+
+```
+
+-   It appears that the sequence is indeed found!
+
+-   Does modulation of the permitted mismatches allow for an increase in read trashed?
+
+```{r}
+dir <- "review_address/negative_control_test"
+files <- c(
+  "exact" = "M13_in_barbell_demux.tsv",
+  "1 mm"  = "M13_in_demux_seqkit_locate_1mm.tsv",
+  "2 mm"  = "M13_in_demux_seqkit_locate_2mm.tsv",
+  "3 mm"  = "M13_in_demux_seqkit_locate_3mm.tsv"
+)
+
+imap_dfr(files, ~ read_tsv(file.path(dir, .x), show_col_types = FALSE) %>%
+                  mutate(method = .y)) %>%
+  mutate(file = gsub("_NTC_exp.fastq.gz", "", file),
+         method = factor(method, levels = names(files))) %>%
+  left_join(barbell_whole_index) %>%
+  mutate(percentage = (count/num_seqs)*100) %>% 
+  group_by(type, method, motif) %>%
+  #group_by(method, motif) %>% 
+  summarise(reads = sum(count), .groups = "drop") %>% 
+  ggplot(aes(x = method, y = reads, stratum = motif, alluvium = motif, fill = motif)) +
+  geom_flow(alpha = 0.5) +
+  geom_stratum(width = 0.3, colour = "grey30") +
+  facet_wrap(~type) +
+  scale_fill_paletteer_d("wesanderson::AsteroidCity3", name = "motif") +
+  theme_minimal() +
+  labs(x = "mismatches allowed", y = "reads with motif (summed over wells)",
+       title = "M13 motif matches by mismatch tolerance: counts")
+
+imap_dfr(files, ~ read_tsv(file.path(dir, .x), show_col_types = FALSE) %>%
+                  mutate(method = .y)) %>%
+  mutate(file = gsub("_NTC_exp.fastq.gz", "", file),
+         method = factor(method, levels = names(files))) %>%
+  left_join(barbell_whole_index) %>%          # see note on `by` below
+  filter(num_seqs > 0) %>%
+  group_by(type, method, motif) %>%
+  summarise(
+    pooled_pct = sum(count) / sum(num_seqs) * 100,
+    mean_pct   = mean(count / num_seqs * 100),
+    .groups = "drop"
+  ) %>% 
+  ggplot(aes(x = method, y = pooled_pct, stratum = motif, alluvium = motif, fill = motif)) +
+  geom_flow(alpha = 0.5) +
+  geom_stratum(width = 0.3, colour = "grey30") +
+  facet_wrap(~type) +
+  scale_fill_paletteer_d("wesanderson::GrandBudapest1", name = "motif") +
+  theme_minimal() +
+  labs(x = "mismatches allowed", y = "% of reads containing motif (pooled)",
+       title = "M13 motif matches by mismatch tolerance: total percentages summed")
+
+read_tsv("review_address/negative_control_test/SPs_in_demux_post_M13_removal.tsv") %>%
+  dplyr::mutate(file = gsub("_NTC_exp.fastq.gz", "", file)) %>% 
+  left_join(barbell_whole_index) %>% 
+  ggplot(aes(x = motif, y = count, fill = type))+
+  #geom_violin()+
+  geom_point()+
+  scale_fill_paletteer_d("nbapalettes::sixers_retro")+
+  facet_wrap(~type)+
+  theme_minimal()+
+  labs(title = "SP tags remaining in demuxed reads after M13-containing reads are trashed")
+```
+
+-   It appears that after 1 mismatch, increase is negligible
+
+-   Additionally, a high percentage of reasds in NC have M13 extra tags, so these can be removed which safely cleans up hopped reads
+
+-   Is there a possible common segment in the M13 motif that's variable more than most other positions?
+
+```{r}
+library(ggseqlogo)
+
+hits <- read_tsv("review_address/negative_control_test/M13_1mm_motif_hits.tsv", col_names = F) %>%
+  dplyr::rename(file = X1,
+                motif = X2,
+                read_id = X3,
+                strand = X4,
+                start = X5,
+                end = X6, 
+                matched = X7) %>% 
+  mutate(file = gsub("_NTC_exp.fastq.gz", "", file)) %>%
+  left_join(barbell_whole_index)
+
+# one logo per motif
+ggseqlogo(split(hits$matched, hits$motif), seq_type = "dna")
+
+# NC vs Sample, per motif
+ggseqlogo(split(hits$matched, paste(hits$type, hits$motif)), seq_type = "dna")
+
+hits %>%
+  filter(motif == "M13F") %>%
+  separate_wider_position(matched, setNames(rep(1, 17), paste0("p", 1:17))) %>%
+  pivot_longer(starts_with("p"), names_to = "pos", values_to = "base") %>%
+  count(pos, base) %>%
+  group_by(pos) %>% mutate(freq = n / sum(n))
+
+```
+
+# Examining differences in COI contigs at different annealing temperatures
+
+-   For this analysis, I've once again made vsearch databases for COI contigs in the `NTC_exp` dataset and the `COI_47` dataset, and reciprocally searched (with `vsearch --usearch_global`) COI amplicons against the opposite databases
+
+-   I have made both stacked bar plot and venn diagram
+
+-   The numbers are hardcoded in from:
+
+```{$ grep -c ">" *fa}
+COI47_in_COI54.fa:258
+COI47_not_in_COI54.fa:158
+COI47_samples.fa:416
+COI54_in_COI47.fa:233
+COI54_not_in_COI47.fa:72
+COI54_samples.fa:305
+```
+
+```{r}
+# counts (sample wells only)
+n_coi47 <- 416
+n_coi54 <- 305
+
+hit_coi47 <- 258   # COI_47 contigs with a >=97% hit in COI_54
+hit_coi54 <- 233   # COI_54 contigs with a >=97% hit in COI_47
+
+miss_coi47 <- n_coi47 - hit_coi47
+miss_coi54 <- n_coi54 - hit_coi54 
+
+# bar plot
+data.frame(
+  direction = rep(c("COI_47 queried vs COI_54", "COI_54 queried vs COI_47"), each = 2),
+  status    = rep(c("≥97% hit", "no hit"), times = 2),
+  n         = c(hit_coi47, miss_coi47, hit_coi54, miss_coi54)) %>%
+  group_by(direction) %>%
+  mutate(total = sum(n)) %>%
+  ungroup() %>%
+  ggplot(aes(direction, n, fill = status)) +
+  geom_col(position = "fill", alpha = 0.75) +
+  geom_text(aes(label = n), position = position_fill(vjust = 0.5)) +
+  geom_text(aes(y = 1, label = paste0("n = ", total)), vjust = -0.5, check_overlap = TRUE) +
+  scale_fill_paletteer_d("nbapalettes::pacers_classic") +
+  scale_y_continuous(labels = scales::percent, expand = expansion(mult = c(0, 0.08))) +
+  labs(x = NULL, y = "Contigs in query set", fill = NULL) +
+  theme_minimal()
+
+# venn: regions are contigs by match status
+shared <- hit_coi47 + hit_coi54
+
+area_coi47 <- miss_coi47 + shared   # area of COI_47 circle
+area_coi54 <- miss_coi54 + shared   # area of COI_54 circle
+
+r_coi47 <- 1
+r_coi54 <- sqrt(area_coi54 / area_coi47)
+
+# lens (intersection) area of two circles at centre distance d
+lens_area <- function(d, r1, r2) {
+  r1^2 * acos((d^2 + r1^2 - r2^2) / (2 * d * r1)) +
+    r2^2 * acos((d^2 + r2^2 - r1^2) / (2 * d * r2)) -
+    0.5 * sqrt((-d + r1 + r2) * (d + r1 - r2) * (d - r1 + r2) * (d + r1 + r2))
+}
+
+d <- uniroot(function(d) lens_area(d, r_coi47, r_coi54) - pi * r_coi47^2 * shared / area_coi47,
+             lower = abs(r_coi47 - r_coi54) + 1e-6,
+             upper = r_coi47 + r_coi54 - 1e-6)$root
+
+circles <- data.frame(
+  set = c("COI_47", "COI_54"),
+  x   = c(0, d),
+  y   = 0,
+  r   = c(r_coi47, r_coi54)
+)
+
+overlap_lo <- d - r_coi54
+
+# "only" labels: anchor inside the crescent, text outside
+labs_df <- data.frame(
+  label = c(paste0(miss_coi47, "\nCOI_47 only"), paste0(miss_coi54, "\nCOI_54 only")),
+  xs    = c((-r_coi47 + overlap_lo) / 2, (r_coi47 + d + r_coi54) / 2),
+  x     = c(-r_coi47 - 0.3, d + r_coi54 + 0.3),
+  hjust = c(1, 0)
+)
+
+ggplot() +
+  geom_circle(data = circles,
+              aes(x0 = x, y0 = y, r = r, fill = set, colour = set),
+              alpha = 0.35, linewidth = 0.8) +
+  geom_segment(data = labs_df, aes(x = xs, xend = x, y = 0, yend = 0), colour = "grey30") +
+  geom_point(data = labs_df, aes(x = xs, y = 0), size = 1, colour = "grey30") +
+  geom_text(data = labs_df, aes(x = x, y = 0, label = label, hjust = hjust),
+            size = 4, nudge_x = c(-0.03, 0.03)) +
+  annotate("text", x = (overlap_lo + r_coi47) / 2, y = 0,
+           label = paste0(shared, "\nshared"), size = 4) +
+  annotate("text", x = c(-0.5, 0.7), y = r_coi47 + 0.15,
+           label = c("COI_47", "COI_54"), fontface = "bold") +
+  coord_fixed(xlim = c(-2.2, 2.2)) +
+  scale_fill_paletteer_d("nbapalettes::pacers_classic") +
+  scale_color_paletteer_d("nbapalettes::pacers_classic") +
+  theme_void() +
+  theme(legend.position = "none")
+```
+
+## Interim conclusion
+
+-   Lower annealing temp = moar contigs
+
+-   The majority of contigs are shared

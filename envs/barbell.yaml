@@ -1,0 +1,14 @@
+name: barbell
+channels:
+  - conda-forge
+  - bioconda
+  - nodefaults
+dependencies:
+  - rust
+  - git
+  - c-compiler
+  - cxx-compiler
+  - make
+  - cmake
+  - python>=3.10
+  - seqkit

@@ -1,0 +1,439 @@
+---
+title: "BLAST barcodes"
+date: "`r format(Sys.time(), '%d %B, %Y')`"
+output:
+  html_document:
+    toc: true
+    df_print: paged
+  pdf_document:
+    toc: true
+---
+
+#setup
+
+```{r}
+library(tidyverse)
+library(tidytext)
+library(forcats)
+library(Biostrings)
+library(taxonomizr)
+library(ggplot2)
+library(ggalluvial)
+library(kableExtra)
+library(paletteer)
+library(patchwork)
+
+knitr::opts_chunk$set(echo = TRUE)
+options(scipen = 999)
+
+# colour palettes for all further analyses
+chosen_level_colours <- c(
+  "Acari"           = "#E6A817",
+  "Annelida"        = "#7B2D8B",
+  "Copepoda"        = "#2DB34A",
+  "Insecta"         = "#D4E84A",
+  "Nematoda"        = "#E8334A",
+  "Platyhelminthes" = "#3A7A5C",
+  "Rotifera"        = "#FF6EC7",
+  "Tardigrada"      = "#4A90D9",
+  "Gastrotricha"    = "#00C9A7",
+  "Ciliophora"      = "#FFEC8B",
+  "Cladocera"       = "#FF8C00",
+  "Ostracoda"       = "#8B1A1A",
+  "Mollusca"        = "#5B4FCF",
+  "NA"              = "#D6D6D6",
+  "off-target"      = "#D6D6D6",
+  "Other"           = "#D6D6D6" 
+  )
+
+
+barcode_colours <- c("maroon4",
+                     "steelblue4",
+                     "lightskyblue",
+                     "olivedrab1",
+                     "darkolivegreen")
+```
+
+# loading in data
+
+```{r load data}
+# these are the large-scale BLAST results for all contigs: outfmt 6, with 5 sseqids per sequence (qseqid)
+all_BLAST_barcodes <- read_tsv("review_address/blast/NTC_exp_rRNA_genes_blast_top5.tsv", col_names = F) %>%
+  dplyr::select("X1", "X2", "X3", "X7") %>%
+  dplyr::rename(
+    qseqid = X1,
+    qseqs_length = X2,
+    sseqid = X3,
+    taxid = X7
+  ) %>%
+  dplyr::mutate(
+    #some regexing to get separated out information
+    #qseqid = gsub("BWplate", "Garden", qseqid),
+    #qseqid = gsub("day", "Lakes", qseqid),
+    #dataset = str_extract(qseqid, "Lakes[0-9]|Garden[0-9]"),
+    gb_num = str_extract(sseqid, "(?<=(gb|emb)\\|)[^|]+"),
+    # needed for taxID info
+    sseqid = stringr::str_extract(sseqid, "(?<=gi\\|)[^|]+"),
+    readcount = gsub("readcount_", "", (str_extract(
+      qseqid, "readcount_[0-9]+"
+    ))),
+    readcount = as.numeric(readcount),
+    sample = stringr::str_extract(qseqid, "SP27_[0-9]+_SP5_[0-9]+"),
+    # the adapters are repeated per dataset so pasting them together keeps things individual
+    barcode = case_when(
+      # what barcode is this?
+      grepl("28S", qseqid) ~ "28S",
+      grepl("18S", qseqid) ~ "18S",
+      TRUE ~ "COI"
+    ),
+    primer_set = case_when(
+      # which primers were used?
+      barcode == "COI" & qseqs_length <= 499 ~ "Sauron",
+      barcode == "COI" & qseqs_length >= 500 ~ "Moorea",
+      barcode == "28S" & qseqs_length <= 2499 ~ "18S+",
+      barcode == "28S" &
+        qseqs_length >= 2500 ~ "28S_solo",
+      barcode == "18S" ~ "18S+",
+      TRUE ~ "?"
+    )
+  ) %>%
+  left_join(
+    getTaxonomy(.$taxid, # adding taxonomy rankings for all hits based on the taxid
+                'accessionTaxa.sql', version = "base") %>%
+      as.data.frame() %>%
+      rownames_to_column(var = "taxid") %>%
+      mutate(taxid = str_extract(taxid, "\\d+")),
+    by = "taxid",
+    multiple = "first"
+  ) %>%
+  mutate(readcount = as.integer(readcount))
+
+
+lookup <- readr::read_csv("../../../DK_amplicon_blasting/new_names_samples_for_treenames.csv") %>%
+  distinct(sample, barcode, expected_taxon) %>% 
+  filter(grepl("BWplate3", sample)) %>% 
+  mutate(sample = gsub("_BWplate3", "", sample))
+```
+
+# get lca from taxonomy
+
+```{r calc lca}
+expected_taxon <- names(chosen_level_colours)
+
+# Calculate LCA and top hit per hit
+tax_cols_present <- c("domain",
+                      "phylum",
+                      "class",
+                      "order",
+                      "family",
+                      "genus",
+                      "species")
+
+all_BLAST_barcodes_taxonomy_lca <- all_BLAST_barcodes %>%
+  group_by(qseqid) %>%
+  mutate(lca = {
+    agreed <- sapply(tax_cols_present, 
+                     function(col) {
+      vals <- unique(na.omit(get(col)))
+      if (length(vals) == 1)
+        vals
+      else
+        NA_character_
+    })
+    lca <- tail(agreed[!is.na(agreed)], 1)
+    if (length(lca) == 0)
+      NA_character_
+    else
+      as.character(lca)
+  }) %>%
+  ungroup() %>%
+  rowwise() %>%
+  mutate(matching_rank = {
+    tax_values <- c(domain, 
+                    phylum, 
+                    class, 
+                    order, 
+                    family, 
+                    genus, 
+                    species)
+    rank_names <- c("domain",
+                    "phylum",
+                    "class",
+                    "order",
+                    "family",
+                    "genus",
+                    "species")
+    match_idx <- which(!is.na(tax_values) & 
+                         tax_values == lca)
+    if (length(match_idx) > 0)
+      rank_names[match_idx[1]]
+    else
+      NA_character_
+  }) %>%
+  ungroup() %>%
+  mutate(
+    phylum_grouped = ifelse(phylum %in% expected_taxon, 
+                            phylum, 
+                            "off-target"),
+    primer_barcode = paste0(barcode, ":", primer_set)) 
+```
+
+```{r readcounts for all contigs violins, fig.height=3, fig.width=3}
+# readcount violins
+sum_contigs <-
+  all_BLAST_barcodes_taxonomy_lca %>% 
+  distinct(qseqid, .keep_all = TRUE) %>% 
+  group_by(primer_barcode) %>% 
+  summarize(total =n())
+
+readcounts_violins <- all_BLAST_barcodes_taxonomy_lca %>%
+  distinct(qseqid, .keep_all = TRUE) %>%
+  mutate(qseqid = fct_reorder(qseqid, readcount)) %>%
+  ggplot(aes(x = primer_barcode, y = readcount, fill = primer_barcode)) +
+  geom_violin(alpha = 0.5) +
+  geom_boxplot(width = 0.2,
+               color = "black",
+               alpha = 0.9) +
+  scale_y_log10(
+    breaks = c(1, 10, 100, 1000, 10000),
+    labels = c("1", "10", "100", "1,000", "10,000")
+  ) +
+  scale_fill_manual(
+    values = barcode_colours,
+    name = ""
+  ) +
+  theme_classic(base_size = 8) +
+  geom_text(data = sum_contigs, aes(
+    label = total,
+    y = 11000,
+    hjust = 0.5,
+    vjust = 0
+  )) +
+  theme(
+    axis.text.x = element_blank(),
+    legend.key.size = unit(0.3, "cm"),
+    legend.position = "bottom"
+  ) +
+  guides(fill = guide_legend(nrow = 2)) +
+  labs(y = "log10 scaled Read Counts", x = "Barcode & Primer")
+
+readcounts_violins
+
+# ggsave(
+#   filename = "plots/readcount_violins_log10.pdf",
+#   plot = readcounts_violins,
+#   width = 3,
+#   height = 3
+# )
+```
+
+# lollipops
+
+```{r lollipop}
+create_lollipop_plot <- function(data,
+                                 y_var,
+                                 facet_vars     = NULL,
+                                 filter_group   = FALSE,
+                                 group_label    = "non-metazoan/non-ciliate",
+                                 barcode       = NULL,
+                                 use_colour_map = FALSE,
+                                 colour_map     = chosen_level_colours,
+                                 biological_rank_order = FALSE) {
+  y_var <- rlang::ensym(y_var)
+  if (!is.null(barcode))
+    data <- data %>% filter(barcode == !!barcode)
+  if (filter_group)
+    data <- data %>% filter(lca_grouped != group_label)
+  group_vars <- if (!is.null(facet_vars)) {
+    c(rlang::as_label(y_var), facet_vars)
+  } else {
+    c(rlang::as_label(y_var), "barcode")
+  }
+  plot_data <- data %>%
+    distinct(qseqid, primer_barcode, .keep_all = TRUE) %>% 
+    mutate(!!y_var := forcats::fct_explicit_na(!!y_var, "NA"))
+  if (biological_rank_order) {
+    biological_order <- c("domain",
+                          "phylum",
+                          "class",
+                          "order",
+                          "family",
+                          "genus",
+                          "species",
+                          "NA")
+    plot_data <- plot_data %>%
+      mutate(!!y_var := factor(!!y_var, levels = biological_order))
+  }
+  plot_data <- plot_data %>%
+    group_by(across(all_of(group_vars))) %>%
+    summarise(n = n_distinct(qseqid), 
+              .groups = "drop") %>%
+    group_by(across(all_of(setdiff(
+      group_vars, 
+      rlang::as_label(y_var)
+    )))) %>%
+    mutate(percentage = n / sum(n) * 100) %>%
+    ungroup()
+  facet_formula <- if (!is.null(facet_vars)) {
+    vars(!!!lapply(facet_vars, rlang::sym))
+  } else {
+    vars(barcode)
+  }
+  colour_scale <- if (use_colour_map) {
+    scale_color_manual(values = colour_map)
+  } else {
+    scale_color_viridis_d()
+  }
+  ggplot(plot_data, aes(x = !!y_var, 
+                        y = percentage)) +
+    geom_segment(
+      aes(
+        xend = !!y_var,
+        y = 0,
+        yend = percentage
+      ),
+      color = "grey70",
+      linewidth = 1.5
+    ) +
+    geom_point(aes(color = !!y_var), 
+               size = 2) +
+    geom_text(aes(label = n),
+              vjust = -0.9,
+              hjust = 0.05,
+              size = 2) +
+    scale_y_continuous(
+      labels = scales::label_percent(scale = 1, 
+                                     accuracy = 1),
+      expand = expansion(mult = c(0, 0.15))
+    ) +
+    colour_scale +
+    coord_flip() +
+    facet_wrap(facet_formula, nrow = 1) +
+    labs(x = rlang::as_label(y_var), 
+         y = "Percentage") +
+    theme_classic(base_size = 8) +
+    theme(
+      legend.position = "none",
+      axis.text.x = element_text(angle = 45, 
+                                 hjust = 0.9),
+      strip.text.x = element_text(size = 6),
+      panel.spacing = unit(0.25, "lines")
+    )
+}
+
+plot_matching_ranks_lollipop <-
+  create_lollipop_plot(
+    all_BLAST_barcodes_taxonomy_lca,
+    matching_rank,
+    facet_vars = c("primer_set", "barcode"),
+    biological_rank_order = TRUE
+  ) +
+  labs(x = "Matching taxonomy rank")
+
+plot_matching_ranks_lollipop
+
+# ggsave(
+#   filename = "plots/plot_matching_ranks_lollipop.pdf",
+#   plot = plot_matching_ranks_lollipop,
+#   width = 4.5,
+#   height = 3
+# )
+```
+
+## proportions of correctly LCA-BLAST-ing contigs per chosen taxon
+
+```{r phyla proportion plot grouped}
+
+all_BLAST_barcodes_taxonomy_lca %>%
+  distinct(qseqid, primer_barcode, .keep_all = TRUE) %>%
+  left_join(lookup, by = c("sample", "barcode")) %>%
+  filter(!is.na(expected_taxon)) %>%
+  mutate(
+    hit = if_else(phylum_grouped %in% target_taxa_for_grouped_stack, phylum_grouped, "Other"),
+    hit = factor(hit, levels = c("Other", target_taxa_for_grouped_stack))
+  ) %>%
+  count(primer_set, barcode, expected_taxon, hit, name = "n_contigs") %>%
+  ggplot(aes(x = expected_taxon, y = n_contigs, fill = hit)) +
+  geom_col(width = 0.7) +   # percentages: geom_col(position = "fill", width = 0.7)
+  scale_fill_manual(values = chosen_level_colours) +
+  facet_wrap(vars(primer_set, barcode), scales = "free_x") +
+  labs(x = "Taxon sampled", y = "Contigs", fill = "Taxon") +
+  theme_classic(base_size = 7) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+```
+
+# supplementary figures and tables
+
+## basic stats:
+```{r}
+all_BLAST_barcodes_taxonomy_lca %>%
+     group_by(sample, primer_barcode) %>%
+     summarize(n_contigs = n(), .groups = "drop") %>%
+     group_by(primer_barcode) %>%
+     summarize(mean_contigs = mean(n_contigs),
+               median_contigs = median(n_contigs)) %>% kable()
+```
+
+
+## average readcounts for barcodes
+
+```{r barcode readcounts csv}
+all_BLAST_barcodes_taxonomy_lca %>% 
+  distinct(qseqid, .keep_all = TRUE) %>% 
+  group_by(primer_barcode) %>% 
+  summarise(
+    Min       = min(readcount),
+    Q1        = quantile(readcount, 0.25),
+    Median    = median(readcount),
+    Mean      = mean(readcount),
+    Q3        = quantile(readcount, 0.75),
+    Max       = max(readcount),
+    .groups   = "drop"
+  ) %>% 
+  dplyr::rename("Barcode and Primer" = "primer_barcode") #%>% 
+  #write.csv("plots/mean_readcounts_per_barcode.csv", row.names = FALSE)
+```
+
+## more lollipop plots
+
+```{r eval=FALSE, include=FALSE}
+plot_phyla_clean_lollipop <- create_lollipop_plot(
+  all_BLAST_barcodes_taxonomy_lca,
+  expected_taxon,
+  facet_vars = c("primer_set", "barcode")
+) +
+  labs(x = "")
+
+plot_phyla_clean_lollipop
+
+
+```
+
+## co-occurrence bubble plots
+
+```{r bubbles}
+blast_expected %>%
+  ggplot(aes(x = sample, y = expected_taxon, size = readcount, color = expected_taxon)) +
+  geom_point(alpha = 0.5) +
+  scale_size_continuous(range = c(0.2, 3), name = "Read Count") +
+  scale_color_manual(values = chosen_level_colours) +
+  facet_grid(
+    rows   = vars(primer_set, barcode),
+    cols   = vars(expected_taxon),
+    scales = "free_x",
+    space  = "free_x"
+  ) +
+  labs(x = "Sample", y = "Taxon", color = "Phylum") +
+  theme_classic(base_size = 8) +
+  theme(
+    axis.text.x  = element_blank(),
+    axis.text.y  = element_text(size = 12),
+    strip.text.x = element_text(angle = 270, size = 12),
+    strip.text.y = element_text(angle = 270, size = 12)
+  )
+```
+
+```{r versioning}
+sessionInfo()
+```
