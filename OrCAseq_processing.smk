@@ -294,30 +294,29 @@ if RUN_ROUND2:
 # ----------------------------------------
 RUN_BLAST = bool(config.get("run_blast", True))
 BLAST_DB = config.get("blast_db", "/mnt/shared/datasets/databases/ncbi/nt")
-BLAST_THREADS = int(config.get("blast_threads", 8))
+BLAST_THREADS = int(config.get("blast_threads", 4))
 BLAST_MAX_TARGETS = int(config.get("blast_max_target_seqs", 500))
 BLAST_COI_PROGRAM = config.get("blast_coi_program", "tblastx")
 BLAST_COI_GENCODE = int(config.get("blast_coi_gencode", 5))   # NCBI genetic code for the query. 5 is for invertebrates (not flatworms, but this is a known limitation)
 BLAST_COI_RUNTIME = int(config.get("blast_coi_runtime_min", 1440))
 
-BLAST_GENES = (
-    (["COI_gene"] if "COIs" in AMPLICON_TYPES else [])
-    + (["rRNA_genes"] if "rRNAs" in AMPLICON_TYPES else [])
+BLAST_TARGETS = (
+    (["COI"] if "COIs" in AMPLICON_TYPES else [])
+    + (["18S", "28S"] if "rRNAs" in AMPLICON_TYPES else [])
 )
 
-def blast_inputs(wc):
-    """All final FASTAs for one gene directory, so BLAST waits for the whole workflow."""
-    suffixes = {"COI_gene": ["COI.fasta"], "rRNA_genes": ["18S.fa", "28S.fa"]}[wc.gene]
-    return [
-        f"{WORK_DIR}/{wc.gene}/{sample}/{combo}_{suffix}"
-        for sample in SAMPLES
-        for combo in COMBOS
-        for suffix in suffixes
-    ]
+def blast_query(wc):
+    """Final FASTA that one BLAST job searches."""
+    if wc.target == "COI":
+        return f"{WORK_DIR}/COI_gene/{wc.sample}/{wc.combo}_COI.fasta"
+    return f"{WORK_DIR}/rRNA_genes/{wc.sample}/{wc.combo}_{wc.target}.fa"
 
 if RUN_BLAST:
     FINAL_TARGETS.extend(
-        f"{WORK_DIR}/BLAST/{DATASET_NAME}_{gene}_blast_top5.tsv" for gene in BLAST_GENES
+        f"{WORK_DIR}/BLAST/{sample}/{combo}_{target}_blast_top5.tsv"
+        for sample in SAMPLES
+        for combo in COMBOS
+        for target in BLAST_TARGETS
     )
 
 # ----------------------------------------
@@ -760,47 +759,44 @@ rule reorganize_cois:
         """
 
 # ----------------------------------------
-# 6: BLAST (per gene directory)
+# 6: BLAST (one job per final FASTA)
 # ----------------------------------------
 rule blast:
     """
-    Concatenate the final FASTAs of one gene directory (COI_gene or rRNA_genes),
-    BLAST against nt, and keep the top 5 hits per query by e-value.
+    BLAST one final FASTA (COI, 18S or 28S for one sample/combo) against nt
+    and keep the top 5 hits per query by e-value.
     """
     input:
-        blast_inputs
+        fasta=blast_query
     output:
-        concatenated=f"{WORK_DIR}/BLAST/{DATASET_NAME}_{{gene}}_concatenated.fa",
-        blast=f"{WORK_DIR}/BLAST/{DATASET_NAME}_{{gene}}_blast.tsv",
-        top5=f"{WORK_DIR}/BLAST/{DATASET_NAME}_{{gene}}_blast_top5.tsv"
+        blast=f"{WORK_DIR}/BLAST/{{sample}}/{{combo}}_{{target}}_blast.tsv",
+        top5=f"{WORK_DIR}/BLAST/{{sample}}/{{combo}}_{{target}}_blast_top5.tsv"
     wildcard_constraints:
-        gene="COI_gene|rRNA_genes"
+        target="COI|18S|28S"
     params:
         db=BLAST_DB,
         max_targets=BLAST_MAX_TARGETS,
-        program=lambda wc: BLAST_COI_PROGRAM if wc.gene == "COI_gene" else "blastn",
+        program=lambda wc: BLAST_COI_PROGRAM if wc.target == "COI" else "blastn",
         extra=lambda wc: f"-query_gencode {BLAST_COI_GENCODE}"
-                         if wc.gene == "COI_gene" and BLAST_COI_PROGRAM == "tblastx" else ""
+                         if wc.target == "COI" and BLAST_COI_PROGRAM == "tblastx" else ""
     threads:
         BLAST_THREADS
     conda:
         "envs/blast.yaml"
     log:
-        f"{WORK_DIR}/logs/blast_{{gene}}.log"
+        f"{WORK_DIR}/logs/blast_{{sample}}_{{combo}}_{{target}}.log"
     shell:
         r"""
         set -euo pipefail
         mkdir -p "$(dirname "{output.blast}")" "$(dirname "{log}")"
         : > "{log}"
 
-        # Concatenate only {{sample}}/*.fa|*.fasta one level below the gene directory
-        find "{WORK_DIR}/{wildcards.gene}" -mindepth 2 -maxdepth 2 -type f \
-            -regextype posix-extended -regex '.*_(COI\.fasta|18S\.fa|28S\.fa)' -print0 \
-            | sort -z | xargs -0 -r cat > "{output.concatenated}"
-
-        if [ ! -s "{output.concatenated}" ]; then
-            echo "Error: concatenated file is empty for {wildcards.gene}" >> "{log}"
-            exit 1
+        # empty query (no consensus for this well): write empty outputs, skip BLAST
+        if [ ! -s "{input.fasta}" ]; then
+            echo "Empty query, skipping BLAST: {input.fasta}" >> "{log}"
+            : > "{output.blast}"
+            : > "{output.top5}"
+            exit 0
         fi
 
         {params.program} \
@@ -810,7 +806,7 @@ rule blast:
             -db "{params.db}" \
             -num_threads {threads} \
             {params.extra} \
-            -query "{output.concatenated}" >> "{log}" 2>&1
+            -query "{input.fasta}" >> "{log}" 2>&1
 
         # top 5 hits per query by e-value
         sort -k1,1 -k4,4g "{output.blast}" \
