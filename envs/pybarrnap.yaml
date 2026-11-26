@@ -3,5 +3,5 @@ channels:
   - bioconda
   - conda-forge
 dependencies:
-  - barrnap=0.9
+  - pybarrnap=0.5.1
   - seqkit=2.9.0

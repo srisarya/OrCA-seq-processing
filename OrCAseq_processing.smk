@@ -1,6 +1,6 @@
 """
 OrCA-seq amplicon processing workflow for local MacBook Pro M3 execution
-Covers: barbell -> amplicon_sorter -> primer_removal -> barrnap/COI reorganization
+Covers: barbell -> amplicon_sorter -> primer_removal -> pybarrnap/COI reorganization
 """
 # ----------------------------------------
 # Setup
@@ -63,7 +63,7 @@ PARAM_DEFAULTS = {
     "barbell_threads": 12,
     "amplicon_sorter_threads": 4,
     "primer_removal_threads": 1,
-    "barrnap_threads": 1,
+    "pybarrnap_threads": 1,
 }
 
 SP5_ADAPTERS = config.get("sp5_adapters", PARAM_DEFAULTS["sp5_adapters"])
@@ -79,7 +79,7 @@ if REMOVE_M13 and not Path(M13_FASTA).exists():
     raise FileNotFoundError(f"M13 motif file not found: {M13_FASTA}")
 AS_THREADS = config.get("amplicon_sorter_threads", PARAM_DEFAULTS["amplicon_sorter_threads"])
 PRIMER_REMOVAL_THREADS = config.get("primer_removal_threads", PARAM_DEFAULTS["primer_removal_threads"])
-BARRNAP_THREADS = config.get("barrnap_threads", PARAM_DEFAULTS["barrnap_threads"])
+pybarrnap_THREADS = config.get("pybarrnap_threads", PARAM_DEFAULTS["pybarrnap_threads"])
 
 _mac_cfg = config.get("mac", False)
 if isinstance(_mac_cfg, str):
@@ -656,9 +656,9 @@ rule primer_removal:
 # ----------------------------------------
 # 5a: Extract rRNAs
 # ----------------------------------------
-rule barrnap_extract:
+rule pybarrnap_extract:
     """
-    Extract 18S and 28S rRNA sequences using barrnap.
+    Extract 18S and 28S rRNA sequences using pybarrnap.
     """
     input:
         fasta=(
@@ -677,23 +677,23 @@ rule barrnap_extract:
         ),
         filtered_fasta=temp(
             f"{WORK_DIR}/rRNA_genes/"
-            f"{{sample}}/{{combo}}_barrnap_nonempty.fa"
+            f"{{sample}}/{{combo}}_pybarrnap_nonempty.fa"
         ),
-        barrnap_fasta=temp(
+        pybarrnap_fasta=temp(
             f"{WORK_DIR}/rRNA_genes/"
-            f"{{sample}}/{{combo}}_barrnap_euk.fa"
+            f"{{sample}}/{{combo}}_pybarrnap_euk.fa"
         ),
-        barrnap_gff=temp(
+        pybarrnap_gff=temp(
             f"{WORK_DIR}/rRNA_genes/"
-            f"{{sample}}/{{combo}}_barrnap_euk.gff3"
+            f"{{sample}}/{{combo}}_pybarrnap_euk.gff3"
         )
     threads:
-        BARRNAP_THREADS
+        pybarrnap_THREADS
     conda:
-        "envs/barrnap.yaml"
+        "envs/pybarrnap.yaml"
     log:
         f"{WORK_DIR}/logs/"
-        f"barrnap_{{sample}}_{{combo}}.log"
+        f"pybarrnap_{{sample}}_{{combo}}.log"
     shell:
         r"""
         set -euo pipefail
@@ -703,30 +703,30 @@ rule barrnap_extract:
 
         seqkit seq -m 10 "{input.fasta}" > "{output.filtered_fasta}"
         if [ ! -s "{output.filtered_fasta}" ]; then
-            echo "WARNING: {input.fasta} contains no FASTA entries at least 10 bp long, skipping barrnap" > "{log}"
+            echo "WARNING: {input.fasta} contains no FASTA entries at least 10 bp long, skipping pybarrnap" > "{log}"
             touch "{output.fasta_18s}" "{output.fasta_28s}" \
-                "{output.barrnap_fasta}" "{output.barrnap_gff}"
+                "{output.pybarrnap_fasta}" "{output.pybarrnap_gff}"
             exit 0
         fi
 
-        barrnap \
+        pybarrnap \
             -k euk \
             --incseq \
             --threads {threads} \
-            -o "{output.barrnap_fasta}" \
+            -o "{output.pybarrnap_fasta}" \
             "{output.filtered_fasta}" \
-            > "{output.barrnap_gff}" \
+            > "{output.pybarrnap_gff}" \
             2> "{log}"
         seqkit grep \
             -r \
             -p "18S_rRNA" \
-            "{output.barrnap_fasta}" \
+            "{output.pybarrnap_fasta}" \
             > "{output.fasta_18s}" \
             2>> "{log}" || true
         seqkit grep \
             -r \
             -p "28S_rRNA" \
-            "{output.barrnap_fasta}" \
+            "{output.pybarrnap_fasta}" \
             > "{output.fasta_28s}" \
             2>> "{log}" || true
         """
