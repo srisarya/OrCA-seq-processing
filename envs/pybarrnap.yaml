@@ -4,4 +4,7 @@ channels:
   - conda-forge
 dependencies:
   - pybarrnap=0.5.1
+  - pyhmmer=0.11.4
+  - infernal=1.1.5
+  - biopython=1.86
   - seqkit=2.9.0
