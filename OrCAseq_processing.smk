@@ -718,18 +718,20 @@ rule pybarrnap_extract:
 
         pybarrnap \
             -k euk \
-            --incseq \
+            -a \
             --threads {threads} \
             -o "{output.pybarrnap_fasta}" \
             "{output.filtered_fasta}" \
             > "{output.pybarrnap_gff}" \
             2> "{log}"
+
         seqkit grep \
             -r \
             -p "18S_rRNA" \
             "{output.pybarrnap_fasta}" \
             > "{output.fasta_18s}" \
             2>> "{log}" || true
+        
         seqkit grep \
             -r \
             -p "28S_rRNA" \
