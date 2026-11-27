@@ -6,7 +6,7 @@ barbell_threads: 16 # barbell annotate threads
 barbell_n_patterns: 200 # number of top patterns passed to `barbell inspect -n`
 amplicon_sorter_threads: 4 # amplicon_sorter threads
 primer_removal_threads: 1 # primer removal threads
-barrnap_threads: 1 # barrnap threads
+pybarrnap_threads: 1 # barrnap threads
 
 # if running on PC, set to false, else if on mac like me, keep as true
 mac: false
@@ -56,5 +56,10 @@ amplicon_types:
     max_size: 900
 
 # running BLAST on the barcodes assembled
+blast_dbs:
+  COI: databases/BOLDistilled_db/BOLDistilled_COI_Oct2026_boldtax
+  18S: databases/Eukaryome_db/General_EUK_SSU_v2.1.sp.fa
+  28S: databases/Eukaryome_db/General_EUK_LSU_v2.1.sp.fa
+
 blast_coi_program: "tblastx"
-blast_coi_gencode: 5          # genetic code used to translate the COI queries
+blast_coi_gencode: 5

@@ -293,7 +293,10 @@ if RUN_ROUND2:
 # BLAST settings
 # ----------------------------------------
 RUN_BLAST = bool(config.get("run_blast", True))
-BLAST_DB = config.get("blast_db", "/mnt/shared/datasets/databases/ncbi/nt")
+BLAST_DB = config.get("blast_db", "/mnt/shared/datasets/databases/ncbi/nt")  # fallback only
+_blast_dbs_cfg = config.get("blast_dbs") or {}
+BLAST_DBS = {t: _blast_dbs_cfg.get(t, BLAST_DB) for t in ("COI", "18S", "28S")}
+
 BLAST_THREADS = int(config.get("blast_threads", 4))
 BLAST_MAX_TARGETS = int(config.get("blast_max_target_seqs", 500))
 BLAST_COI_PROGRAM = config.get("blast_coi_program", "tblastx")
@@ -304,6 +307,10 @@ BLAST_TARGETS = (
     (["COI"] if "COIs" in AMPLICON_TYPES else [])
     + (["18S", "28S"] if "rRNAs" in AMPLICON_TYPES else [])
 )
+for _t in BLAST_TARGETS:
+    _db = Path(BLAST_DBS[_t])
+    if not any(_db.parent.glob(_db.name + ".n*")):
+        print(f"WARNING: no BLAST index files found for {_t} db '{_db}' (ignore if resolved via BLASTDB)")
 
 def blast_query(wc):
     """Final FASTA that one BLAST job searches."""
@@ -774,7 +781,7 @@ rule blast:
     wildcard_constraints:
         target="COI|18S|28S"
     params:
-        db=BLAST_DB,
+        db=lambda wc: BLAST_DBS[wc.target],
         max_targets=BLAST_MAX_TARGETS,
         program=lambda wc: BLAST_COI_PROGRAM if wc.target == "COI" else "blastn",
         extra=lambda wc: f"-query_gencode {BLAST_COI_GENCODE}"
@@ -802,7 +809,7 @@ rule blast:
         {params.program} \
             -max_target_seqs {params.max_targets} \
             -out "{output.blast}" \
-            -outfmt "6 qseqid qlen sseqid evalue bitscore pident staxids" \
+            -outfmt "6 qseqid qlen sseqid evalue bitscore pident" \
             -db "{params.db}" \
             -num_threads {threads} \
             {params.extra} \
